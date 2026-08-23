@@ -455,3 +455,77 @@ def test_cli_unexpected_failure_is_json_with_exit_five(
         "error": "disk unavailable",
         "error_type": "OSError",
     }
+
+
+def test_cli_review_passes_explicit_model_configuration(
+    tmp_path: Path,
+    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request_path = tmp_path / "request.json"
+    write_json(
+        request_path,
+        {
+            "task_id": "AR-7",
+            "title": "Expose CLI",
+            "proposed_solution": "Configure reviewer model.",
+            "relevant_diff": "+reviewer = configured",
+        },
+    )
+    main(
+        [
+            "--workspace",
+            str(tmp_path),
+            "start",
+            "review-1",
+            "cli",
+            "--input",
+            str(request_path),
+        ]
+    )
+    capsys.readouterr()
+    captured = {}
+
+    def fake_generate(
+        service: ReviewService,
+        thread_id: str,
+        event_id: str,
+        config,
+    ):
+        captured.update(
+            {
+                "thread_id": thread_id,
+                "event_id": event_id,
+                "config": config,
+            }
+        )
+        return service.status(thread_id)
+
+    monkeypatch.setattr(ReviewService, "generate_review", fake_generate)
+
+    code = main(
+        [
+            "--workspace",
+            str(tmp_path),
+            "review",
+            "review-1",
+            "event-1",
+            "--provider",
+            "openai",
+            "--model",
+            "gpt-configured",
+            "--api-key-env",
+            "CUSTOM_OPENAI_KEY",
+            "--option",
+            "temperature=0",
+        ]
+    )
+    output = json.loads(capsys.readouterr().out)
+
+    assert code == 0
+    assert captured["thread_id"] == "review-1"
+    assert captured["event_id"] == "event-1"
+    assert captured["config"].provider == "openai"
+    assert captured["config"].model == "gpt-configured"
+    assert captured["config"].options == {"temperature": 0}
+    assert output["state"]["status"] == "awaiting_review_response"

@@ -142,6 +142,31 @@ def test_append_event_rejects_conflicting_idempotency_key(tmp_path: Path) -> Non
         store.append_event("review-1", "event-1", conflicting)
 
 
+def test_event_metadata_is_secret_safe_and_idempotent(tmp_path: Path) -> None:
+    store = SqliteReviewStore(tmp_path / "reviews.sqlite")
+    create_review(store)
+    approval = ReviewResponse(round=1, position="AGREE", verdict="APPROVE")
+    metadata = {"provider": "openai", "model": "gpt-configured"}
+
+    store.append_event("review-1", "event-1", approval, metadata=metadata)
+    duplicate = store.append_event(
+        "review-1",
+        "event-1",
+        approval,
+        metadata=metadata,
+    )
+
+    assert duplicate.status is ReviewStatus.APPROVED
+    assert store.load_history("review-1").events[0].metadata == metadata
+    with pytest.raises(ValueError, match="unsupported event metadata"):
+        store.append_event(
+            "review-1",
+            "event-2",
+            approval,
+            metadata={"api_key": "must-not-persist"},
+        )
+
+
 def test_invalid_event_rolls_back_idempotency_key(tmp_path: Path) -> None:
     store = SqliteReviewStore(tmp_path / "reviews.sqlite")
     create_review(store)

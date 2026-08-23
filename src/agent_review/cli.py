@@ -17,6 +17,10 @@ from agent_review.models import (
     ReviewResponse,
 )
 from agent_review.persistence import PersistenceConflict, ReviewNotFound
+from agent_review.reviewer_config import (
+    ReviewerConfigurationError,
+    load_reviewer_config,
+)
 from agent_review.service import ReviewService
 
 
@@ -47,6 +51,14 @@ def _build_parser() -> JsonArgumentParser:
         event.add_argument("thread_id")
         event.add_argument("event_id")
         event.add_argument("--input", required=True)
+
+    review = commands.add_parser("review")
+    review.add_argument("thread_id")
+    review.add_argument("event_id")
+    review.add_argument("--provider")
+    review.add_argument("--model")
+    review.add_argument("--api-key-env")
+    review.add_argument("--option", action="append", default=[])
     return parser
 
 
@@ -70,6 +82,19 @@ def _result(thread_id: str, state: ReviewState) -> dict[str, Any]:
     }
 
 
+def _parse_options(values: list[str]) -> dict[str, Any]:
+    options: dict[str, Any] = {}
+    for value in values:
+        key, separator, raw_value = value.partition("=")
+        if not separator or not key:
+            raise CliInputError("--option must use KEY=JSON")
+        try:
+            options[key] = json.loads(raw_value)
+        except json.JSONDecodeError as error:
+            raise CliInputError(f"invalid JSON for option {key!r}: {error}") from error
+    return options
+
+
 def _emit(payload: dict[str, Any], *, stream: TextIO | None = None) -> None:
     output = sys.stdout if stream is None else stream
     output.write(json.dumps(payload, sort_keys=True) + "\n")
@@ -86,6 +111,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             state = service.start(arguments.thread_id, arguments.slug, request)
         elif arguments.command == "status":
             state = service.status(arguments.thread_id)
+        elif arguments.command == "review":
+            config = load_reviewer_config(
+                arguments.workspace.resolve(),
+                provider=arguments.provider,
+                model=arguments.model,
+                api_key_env=arguments.api_key_env,
+                options=_parse_options(arguments.option),
+            )
+            state = service.generate_review(
+                arguments.thread_id,
+                arguments.event_id,
+                config,
+            )
         else:
             model = {
                 "respond": ReviewResponse,
@@ -108,7 +146,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             stream=sys.stderr,
         )
         return 4
-    except (CliInputError, ValidationError, ValueError) as error:
+    except (
+        CliInputError,
+        ReviewerConfigurationError,
+        ValidationError,
+        ValueError,
+    ) as error:
         _emit(
             {"ok": False, "error": str(error), "error_type": type(error).__name__},
             stream=sys.stderr,

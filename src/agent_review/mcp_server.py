@@ -6,7 +6,7 @@ from pathlib import Path
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 
 from agent_review.lifecycle import ReviewState, expected_event_type
 from agent_review.models import (
@@ -15,6 +15,7 @@ from agent_review.models import (
     ReviewRequest,
     ReviewResponse,
 )
+from agent_review.reviewer_config import load_reviewer_config
 from agent_review.service import ReviewService
 
 
@@ -44,6 +45,30 @@ def _result(thread_id: str, state: ReviewState) -> ReviewToolResult:
     )
 
 
+def _generate_review(
+    workspace: str,
+    thread_id: str,
+    event_id: str,
+    provider: str | None,
+    model: str | None,
+    api_key_env: str | None,
+    options: dict[str, JsonValue] | None,
+) -> ReviewState:
+    workspace_path = Path(workspace).expanduser().resolve()
+    config = load_reviewer_config(
+        workspace_path,
+        provider=provider,
+        model=model,
+        api_key_env=api_key_env,
+        options=options,
+    )
+    return ReviewService(workspace_path).generate_review(
+        thread_id,
+        event_id,
+        config,
+    )
+
+
 def _execute(
     thread_id: str,
     operation: Callable[[], ReviewState],
@@ -59,6 +84,12 @@ _IDEMPOTENT_WRITE = ToolAnnotations(
     destructiveHint=False,
     idempotentHint=True,
     openWorldHint=False,
+)
+_IDEMPOTENT_MODEL_WRITE = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=True,
 )
 
 
@@ -108,6 +139,35 @@ def submit_review_response(
     return _execute(
         thread_id,
         lambda: _service(workspace).submit(thread_id, event_id, response),
+    )
+
+
+@server.tool(
+    name="agent_review_generate",
+    description="Generate and apply a reviewer response with configured provider/model.",
+    annotations=_IDEMPOTENT_MODEL_WRITE,
+    structured_output=True,
+)
+def generate_review_response(
+    workspace: str,
+    thread_id: str,
+    event_id: str,
+    provider: str | None = None,
+    model: str | None = None,
+    api_key_env: str | None = None,
+    options: dict[str, JsonValue] | None = None,
+) -> ReviewToolResult:
+    return _execute(
+        thread_id,
+        lambda: _generate_review(
+            workspace,
+            thread_id,
+            event_id,
+            provider,
+            model,
+            api_key_env,
+            options,
+        ),
     )
 
 

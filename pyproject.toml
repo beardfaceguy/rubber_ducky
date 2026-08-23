@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Deterministic protocol models for agent-to-agent code review"
 requires-python = ">=3.12"
 dependencies = [
+    "langchain>=1.3.16",
     "langchain-core>=1.6.0",
     "langgraph>=1.2.11",
     "langgraph-checkpoint-sqlite>=3.1.1",
@@ -18,6 +19,14 @@ dependencies = [
 [project.scripts]
 agent-review = "agent_review.cli:run"
 agent-review-mcp = "agent_review.mcp_server:run"
+
+[project.optional-dependencies]
+openai = [
+    "langchain-openai>=1.6.0",
+]
+anthropic = [
+    "langchain-anthropic>=1.6.1",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

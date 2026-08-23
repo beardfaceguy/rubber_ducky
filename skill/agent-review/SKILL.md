@@ -21,6 +21,7 @@ When acting as the worker, use the `agent-review` CLI from the workspace root:
 ```text
 agent-review start <thread-id> <slug> --input <request.json>
 agent-review status <thread-id>
+agent-review review <thread-id> <event-id> [--provider P --model M]
 agent-review respond <thread-id> <event-id> --input <response.json>
 agent-review rebut <thread-id> <event-id> --input <rebuttal.json>
 agent-review resume <thread-id> <event-id> --input <summary.json>
@@ -40,10 +41,17 @@ Exit codes:
 - `5` — unexpected internal failure
 
 If the MCP server is configured, workers may use the equivalent
-`agent_review_start`, `agent_review_status`, `agent_review_respond`,
-`agent_review_rebut`, and `agent_review_resume` tools. Reuse the same thread and
-event IDs when switching between CLI and MCP; both call the same durable
-service.
+`agent_review_start`, `agent_review_status`, `agent_review_generate`,
+`agent_review_respond`, `agent_review_rebut`, and `agent_review_resume` tools.
+Reuse the same thread and event IDs when switching between CLI and MCP; both
+call the same durable service.
+
+Reviewer provider and model are never hard-coded. Resolution order is explicit
+CLI/MCP values, then `AGENT_REVIEW_REVIEWER_PROVIDER` plus
+`AGENT_REVIEW_REVIEWER_MODEL`, then `agent_review/config.json`. Credentials are
+read from the configured environment-variable name and must never be written
+to input JSON or audit logs. Provider and model must come together from one
+precedence source; do not mix values across sources.
 
 When acting as the reviewer, never write files or invoke CLI/MCP write
 operations. Return only the protocol-formatted Review Response to the worker.

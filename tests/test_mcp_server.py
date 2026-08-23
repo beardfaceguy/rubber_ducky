@@ -5,6 +5,7 @@ import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
 from agent_review.mcp_server import server
+from agent_review.service import ReviewService
 
 
 def test_mcp_tools_expose_validated_service_contracts(tmp_path: Path) -> None:
@@ -15,13 +16,16 @@ def test_mcp_tools_expose_validated_service_contracts(tmp_path: Path) -> None:
         "agent_review_start",
         "agent_review_status",
         "agent_review_respond",
+        "agent_review_generate",
         "agent_review_rebut",
         "agent_review_resume",
     }
     assert all(tool.annotations.idempotent_hint is True for tool in tools)
     assert all(tool.annotations.read_only_hint is False for tool in tools)
     start_tool = next(tool for tool in tools if tool.name == "agent_review_start")
+    generate_tool = next(tool for tool in tools if tool.name == "agent_review_generate")
     assert "request" in start_tool.input_schema["properties"]
+    assert generate_tool.annotations.open_world_hint is True
 
     started = asyncio.run(
         server.call_tool(
@@ -43,6 +47,63 @@ def test_mcp_tools_expose_validated_service_contracts(tmp_path: Path) -> None:
     assert started.is_error is False
     assert started.structured_content["thread_id"] == "review-1"
     assert started.structured_content["state"]["status"] == "awaiting_review_response"
+
+
+def test_mcp_generate_uses_explicit_reviewer_configuration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = str(tmp_path)
+    call_tool(
+        "agent_review_start",
+        {
+            "workspace": workspace,
+            "thread_id": "review-1",
+            "slug": "mcp",
+            "request": {
+                "task_id": "AR-8",
+                "title": "Add MCP facade",
+                "proposed_solution": "Configure reviewer model.",
+                "relevant_diff": "+reviewer = configured",
+            },
+        },
+    )
+    captured = {}
+
+    def fake_generate(
+        service: ReviewService,
+        thread_id: str,
+        event_id: str,
+        config,
+    ):
+        captured.update(
+            {
+                "thread_id": thread_id,
+                "event_id": event_id,
+                "config": config,
+            }
+        )
+        return service.status(thread_id)
+
+    monkeypatch.setattr(ReviewService, "generate_review", fake_generate)
+
+    generated = call_tool(
+        "agent_review_generate",
+        {
+            "workspace": workspace,
+            "thread_id": "review-1",
+            "event_id": "event-1",
+            "provider": "anthropic",
+            "model": "claude-configured",
+            "api_key_env": "CUSTOM_ANTHROPIC_KEY",
+            "options": {"temperature": 0},
+        },
+    )
+
+    assert generated.structured_content["state"]["status"] == "awaiting_review_response"
+    assert captured["config"].provider == "anthropic"
+    assert captured["config"].model == "claude-configured"
+    assert captured["config"].options == {"temperature": 0}
 
 
 def call_tool(name: str, arguments: dict):

@@ -6,9 +6,11 @@ available; the mutable Markdown log is not itself a cryptographic trust root.
 
 import os
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha256
 from hmac import compare_digest
+from html import escape
 from pathlib import Path
 
 from agent_review.models import (
@@ -23,6 +25,7 @@ from agent_review.models import (
 _TASK_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 _SLUG_PATTERN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _EVENT_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,254}")
+_METADATA_KEY_PATTERN = re.compile(r"[a-z][a-z0-9_.-]{0,63}")
 _LOG_HEADER = "# Agent Review Log\n**Protocol:** review-protocol.md v1.3\n"
 
 
@@ -270,6 +273,7 @@ class AuditLog:
         event: ReviewRequest | ReviewResponse | Rebuttal | EscalationSummary,
         *,
         event_id: str | None = None,
+        audit_metadata: Mapping[str, str] | None = None,
     ) -> ArtifactEvidence | None:
         """Append one protocol message and return its artifact evidence."""
 
@@ -283,11 +287,17 @@ class AuditLog:
             safe_event_id = None
 
         if isinstance(event, ReviewResponse):
-            metadata = self._metadata(safe_event_id)
+            metadata = self._metadata(
+                safe_event_id,
+                audit_metadata=audit_metadata,
+            )
             self._append_text(f"\n{metadata}{_render_response(event)}")
             return None
         if isinstance(event, EscalationSummary):
-            metadata = self._metadata(safe_event_id)
+            metadata = self._metadata(
+                safe_event_id,
+                audit_metadata=audit_metadata,
+            )
             self._append_text(f"\n{metadata}{_render_escalation(event)}")
             return None
 
@@ -296,7 +306,10 @@ class AuditLog:
             artifact_text = event.revised_diff
             rendered_event = _render_rebuttal(event)
             if artifact_text == UNCHANGED_DIFF:
-                metadata = self._metadata(safe_event_id)
+                metadata = self._metadata(
+                    safe_event_id,
+                    audit_metadata=audit_metadata,
+                )
                 self._append_text(f"\n{metadata}{rendered_event}")
                 return None
         else:
@@ -326,7 +339,11 @@ class AuditLog:
             relative_path=artifact_path.relative_to(self.log_path.parent).as_posix(),
             sha256=sha256(artifact_bytes).hexdigest(),
         )
-        metadata = self._metadata(safe_event_id, evidence)
+        metadata = self._metadata(
+            safe_event_id,
+            evidence,
+            audit_metadata,
+        )
         try:
             self._append_text(f"\n{metadata}{rendered_event}")
         except Exception:
@@ -339,6 +356,7 @@ class AuditLog:
     def _metadata(
         event_id: str | None,
         evidence: ArtifactEvidence | None = None,
+        audit_metadata: Mapping[str, str] | None = None,
     ) -> str:
         attributes: list[str] = []
         if event_id is not None:
@@ -350,6 +368,14 @@ class AuditLog:
                     f'sha256="{evidence.sha256}"',
                 )
             )
+        for key, value in sorted((audit_metadata or {}).items()):
+            safe_key = _validate_component(
+                key,
+                _METADATA_KEY_PATTERN,
+                "audit metadata key",
+            )
+            safe_value = escape(value, quote=True).replace("--", "&#45;&#45;")
+            attributes.append(f'{safe_key}="{safe_value}"')
         return f"<!-- {' '.join(attributes)} -->\n" if attributes else ""
 
     def _append_text(self, text: str) -> None:

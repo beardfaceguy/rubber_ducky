@@ -6,11 +6,11 @@ SKILL_ROOT = Path(__file__).parents[1] / "skill" / "agent-review"
 def test_skill_documents_cli_and_manual_fallback() -> None:
     skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
 
-    for command in ("start", "status", "respond", "rebut", "resume"):
+    for command in ("start", "status", "review", "respond", "rebut", "resume"):
         assert f"agent-review {command}" in skill
     for exit_code in ("`0`", "`2`", "`3`", "`4`", "`5`"):
         assert exit_code in skill
-    for tool in ("start", "status", "respond", "rebut", "resume"):
+    for tool in ("start", "status", "generate", "respond", "rebut", "resume"):
         assert f"`agent_review_{tool}`" in skill
     assert "If `agent-review` is unavailable" in skill
     assert "never write files or invoke CLI/MCP write" in skill

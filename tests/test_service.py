@@ -1,11 +1,17 @@
 from pathlib import Path
 
 import pytest
+from langchain_core.runnables import RunnableLambda
 
 from agent_review.audit import AuditLog
 from agent_review.lifecycle import ReviewStatus
 from agent_review.models import ReviewRequest, ReviewResponse
 from agent_review.persistence import PersistenceConflict, ReviewNotFound
+from agent_review.reviewer_config import (
+    ProviderDefinition,
+    ReviewerModelConfig,
+    ReviewerModelFactory,
+)
 from agent_review.service import ReviewService
 
 
@@ -16,6 +22,22 @@ def make_request() -> ReviewRequest:
         proposed_solution="Persist, audit, then resume the workflow.",
         relevant_diff="+service = ReviewService(workspace)",
     )
+
+
+class FakeReviewerModel:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def with_structured_output(self, _schema):
+        return RunnableLambda(self._respond)
+
+    def _respond(self, _messages):
+        self.calls += 1
+        return {
+            "round": 1,
+            "position": "AGREE",
+            "verdict": "APPROVE",
+        }
 
 
 def test_service_starts_durable_review_and_audit(tmp_path: Path) -> None:
@@ -184,3 +206,164 @@ def test_start_recovers_orphaned_request_artifact(tmp_path: Path) -> None:
 
     assert recovered.status is ReviewStatus.AWAITING_REVIEW_RESPONSE
     assert "## Review Request — Round 1" in audit.log_path.read_text(encoding="utf-8")
+
+
+def test_service_generates_configured_reviewer_response_with_metadata(
+    tmp_path: Path,
+) -> None:
+    service = ReviewService(tmp_path)
+    service.start("review-1", "application-service", make_request())
+    config = ReviewerModelConfig(provider="local", model="offline-reviewer")
+    factory = ReviewerModelFactory(
+        {
+            "local": ProviderDefinition(
+                lambda _config, _credential: FakeReviewerModel(),
+                requires_credential=False,
+            )
+        }
+    )
+
+    completed = service.generate_review(
+        "review-1",
+        "event-1",
+        config,
+        factory=factory,
+        environment={},
+    )
+
+    assert completed.status is ReviewStatus.APPROVED
+    history = service.store.load_history("review-1")
+    assert history.events[0].metadata == {
+        "provider": "local",
+        "model": "offline-reviewer",
+    }
+    log = (tmp_path / "agent_review" / "AR-7-application-service.md").read_text(
+        encoding="utf-8"
+    )
+    assert 'reviewer.provider="local"' in log
+    assert 'reviewer.model="offline-reviewer"' in log
+
+
+def test_generated_review_retry_does_not_call_model_twice(tmp_path: Path) -> None:
+    service = ReviewService(tmp_path)
+    service.start("review-1", "application-service", make_request())
+    config = ReviewerModelConfig(provider="local", model="offline-reviewer")
+    model = FakeReviewerModel()
+    factory = ReviewerModelFactory(
+        {
+            "local": ProviderDefinition(
+                lambda _config, _credential: model,
+                requires_credential=False,
+            )
+        }
+    )
+
+    first = service.generate_review(
+        "review-1",
+        "event-1",
+        config,
+        factory=factory,
+        environment={},
+    )
+    duplicate = service.generate_review(
+        "review-1",
+        "event-1",
+        config,
+        factory=factory,
+        environment={},
+    )
+
+    assert duplicate == first
+    assert model.calls == 1
+
+
+def test_generated_review_retry_backfills_failed_audit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = ReviewService(tmp_path)
+    service.start("review-1", "application-service", make_request())
+    config = ReviewerModelConfig(provider="local", model="offline-reviewer")
+    model = FakeReviewerModel()
+    factory = ReviewerModelFactory(
+        {
+            "local": ProviderDefinition(
+                lambda _config, _credential: model,
+                requires_credential=False,
+            )
+        }
+    )
+    original_append = AuditLog.append
+
+    def fail_generated_audit(
+        audit: AuditLog,
+        event,
+        **kwargs,
+    ):
+        if kwargs.get("event_id") == "event-1":
+            raise OSError("audit unavailable")
+        return original_append(audit, event, **kwargs)
+
+    monkeypatch.setattr(AuditLog, "append", fail_generated_audit)
+    with pytest.raises(OSError, match="audit unavailable"):
+        service.generate_review(
+            "review-1",
+            "event-1",
+            config,
+            factory=factory,
+            environment={},
+        )
+
+    monkeypatch.setattr(AuditLog, "append", original_append)
+    recovered = service.generate_review(
+        "review-1",
+        "event-1",
+        config,
+        factory=factory,
+        environment={},
+    )
+
+    assert recovered.status is ReviewStatus.APPROVED
+    assert model.calls == 1
+    log = (tmp_path / "agent_review" / "AR-7-application-service.md").read_text(
+        encoding="utf-8"
+    )
+    assert "## Review Response — Round 1" in log
+
+
+def test_generated_review_never_persists_runtime_credential(tmp_path: Path) -> None:
+    service = ReviewService(tmp_path)
+    service.start("review-1", "application-service", make_request())
+    credential = "runtime-secret-value"
+    received_credentials: list[str | None] = []
+    config = ReviewerModelConfig(
+        provider="remote",
+        model="configured-reviewer",
+        api_key_env="REMOTE_API_KEY",
+    )
+    factory = ReviewerModelFactory(
+        {
+            "remote": ProviderDefinition(
+                lambda _config, value: (
+                    received_credentials.append(value) or FakeReviewerModel()
+                ),
+            )
+        }
+    )
+
+    service.generate_review(
+        "review-1",
+        "event-1",
+        config,
+        factory=factory,
+        environment={"REMOTE_API_KEY": credential},
+    )
+
+    assert received_credentials == [credential]
+    assert credential not in (
+        service.database_path.read_bytes().decode(errors="ignore")
+    )
+    log = (tmp_path / "agent_review" / "AR-7-application-service.md").read_text(
+        encoding="utf-8"
+    )
+    assert credential not in log

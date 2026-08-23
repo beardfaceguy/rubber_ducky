@@ -1,11 +1,13 @@
 """Durable application service coordinating journal, audit, and workflow."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 
 from langgraph.types import Command
 
+from agent_review.adapters import ReviewerAdapter
 from agent_review.audit import ArtifactConflict, AuditIdentityConflict, AuditLog
 from agent_review.lifecycle import ReviewEvent, ReviewState, replay_review
 from agent_review.models import ReviewRequest
@@ -15,6 +17,7 @@ from agent_review.persistence import (
     StoredReview,
     sqlite_review_checkpointer,
 )
+from agent_review.reviewer_config import ReviewerModelConfig, ReviewerModelFactory
 from agent_review.workflow import build_review_graph
 
 
@@ -102,6 +105,8 @@ class ReviewService:
         thread_id: str,
         event_id: str,
         event: ReviewEvent,
+        *,
+        metadata: Mapping[str, str] | None = None,
     ) -> ReviewState:
         """Journal, audit, then apply an event.
 
@@ -110,17 +115,74 @@ class ReviewService:
         produce a visible duplicate entry on retry rather than lose evidence.
         """
 
-        result = self.store.append_event_once(thread_id, event_id, event)
+        result = self.store.append_event_once(
+            thread_id,
+            event_id,
+            event,
+            metadata=metadata,
+        )
         history = self.store.load_history(thread_id)
         audit = self._open_audit(thread_id, history)
         if result.appended or not self.store.is_event_audited(thread_id, event_id):
             try:
-                audit.append(event, event_id=event_id)
+                audit.append(
+                    event,
+                    event_id=event_id,
+                    audit_metadata={
+                        f"reviewer.{key}": value
+                        for key, value in (metadata or {}).items()
+                    },
+                )
             except ArtifactConflict as error:
                 raise PersistenceConflict(str(error)) from error
             self.store.mark_event_audited(thread_id, event_id)
         self._reconcile_graph(thread_id, history, result.state)
         return result.state
+
+    def generate_review(
+        self,
+        thread_id: str,
+        event_id: str,
+        config: ReviewerModelConfig,
+        *,
+        factory: ReviewerModelFactory | None = None,
+        environment: Mapping[str, str] | None = None,
+    ) -> ReviewState:
+        """Generate, validate, persist, and audit one reviewer response.
+
+        Retrying a persisted event skips model invocation. Concurrent first
+        attempts can both invoke the provider; event idempotency still permits
+        only one result to become canonical.
+        """
+
+        metadata = config.audit_metadata()
+        history = self.store.load_history(thread_id)
+        for stored in history.events:
+            if stored.event_id == event_id:
+                if stored.metadata != metadata:
+                    raise PersistenceConflict(
+                        f"event ID {event_id!r} was reused with different "
+                        "reviewer configuration"
+                    )
+                return self.submit(
+                    thread_id,
+                    event_id,
+                    stored.event,
+                    metadata=stored.metadata,
+                )
+
+        state = self.status(thread_id)
+        model = (factory or ReviewerModelFactory()).create(
+            config,
+            environment=environment,
+        )
+        response = ReviewerAdapter(model).review(state)
+        return self.submit(
+            thread_id,
+            event_id,
+            response,
+            metadata=metadata,
+        )
 
     def _open_audit(self, thread_id: str, history: StoredReview) -> AuditLog:
         if history.audit_slug is None:

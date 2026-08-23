@@ -1,7 +1,8 @@
 """Durable SQLite event storage and LangGraph checkpointer factories."""
 
+import json
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +29,7 @@ _EVENT_MODELS = {
     "rebuttal": Rebuttal,
     "escalation_summary": EscalationSummary,
 }
+_ALLOWED_EVENT_METADATA = {"provider", "model"}
 
 
 class ReviewNotFound(KeyError):
@@ -42,6 +44,7 @@ class PersistenceConflict(ValueError):
 class StoredEvent:
     event_id: str
     event: ReviewEvent
+    metadata: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -95,6 +98,7 @@ class SqliteReviewStore:
                     event_id TEXT NOT NULL,
                     event_type TEXT NOT NULL,
                     payload_json TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
                     PRIMARY KEY (thread_id, sequence),
                     UNIQUE (thread_id, event_id),
                     FOREIGN KEY (thread_id) REFERENCES reviews(thread_id)
@@ -108,6 +112,19 @@ class SqliteReviewStore:
                 );
                 """
             )
+            event_columns = {
+                row[1]
+                for row in connection.execute(
+                    "PRAGMA table_info(review_events)"
+                ).fetchall()
+            }
+            if "metadata_json" not in event_columns:
+                connection.execute(
+                    """
+                    ALTER TABLE review_events
+                    ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'
+                    """
+                )
 
     def create_review(
         self,
@@ -159,36 +176,45 @@ class SqliteReviewStore:
         thread_id: str,
         event_id: str,
         event: ReviewEvent,
+        metadata: Mapping[str, str] | None = None,
     ) -> ReviewState:
         """Validate and durably append one idempotent protocol event."""
 
-        return self.append_event_once(thread_id, event_id, event).state
+        return self.append_event_once(
+            thread_id,
+            event_id,
+            event,
+            metadata=metadata,
+        ).state
 
     def append_event_once(
         self,
         thread_id: str,
         event_id: str,
         event: ReviewEvent,
+        metadata: Mapping[str, str] | None = None,
     ) -> EventAppendResult:
         """Append an event and report whether this call inserted it."""
 
         self._validate_identifier(thread_id, "thread ID")
         self._validate_identifier(event_id, "event ID")
         event_type, payload_json = self._serialize_event(event)
+        metadata_values = self._validate_metadata(dict(metadata or {}))
+        metadata_json = json.dumps(metadata_values, sort_keys=True)
 
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             state = self._load_review(connection, thread_id)
             existing = connection.execute(
                 """
-                SELECT event_type, payload_json
+                SELECT event_type, payload_json, metadata_json
                 FROM review_events
                 WHERE thread_id = ? AND event_id = ?
                 """,
                 (thread_id, event_id),
             ).fetchone()
             if existing is not None:
-                if existing == (event_type, payload_json):
+                if existing == (event_type, payload_json, metadata_json):
                     return EventAppendResult(state=state, appended=False)
                 raise PersistenceConflict(
                     f"event ID {event_id!r} was reused with different data"
@@ -207,9 +233,17 @@ class SqliteReviewStore:
                 """
                 INSERT INTO review_events(
                     thread_id, sequence, event_id, event_type, payload_json
-                ) VALUES (?, ?, ?, ?, ?)
+                    , metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (thread_id, sequence, event_id, event_type, payload_json),
+                (
+                    thread_id,
+                    sequence,
+                    event_id,
+                    event_type,
+                    payload_json,
+                    metadata_json,
+                ),
             )
             return EventAppendResult(state=next_state, appended=True)
 
@@ -288,7 +322,7 @@ class SqliteReviewStore:
             raise ReviewNotFound(thread_id)
         event_rows = connection.execute(
             """
-            SELECT event_id, event_type, payload_json
+            SELECT event_id, event_type, payload_json, metadata_json
             FROM review_events
             WHERE thread_id = ?
             ORDER BY sequence
@@ -299,8 +333,9 @@ class SqliteReviewStore:
             StoredEvent(
                 event_id=event_id,
                 event=self._deserialize_event(event_type, payload_json),
+                metadata=self._validate_metadata(json.loads(metadata_json)),
             )
-            for event_id, event_type, payload_json in event_rows
+            for event_id, event_type, payload_json, metadata_json in event_rows
         )
         request = ReviewRequest.model_validate_json(request_row[0])
         return StoredReview(
@@ -327,6 +362,20 @@ class SqliteReviewStore:
         if model is None:
             raise ValueError(f"unknown persisted event type: {event_type!r}")
         return model.model_validate_json(payload_json)
+
+    @staticmethod
+    def _validate_metadata(value: object) -> dict[str, str]:
+        if not isinstance(value, dict) or not all(
+            isinstance(key, str) and isinstance(item, str)
+            for key, item in value.items()
+        ):
+            raise ValueError("event metadata must be a string object")
+        unknown_metadata = set(value) - _ALLOWED_EVENT_METADATA
+        if unknown_metadata:
+            raise ValueError(f"unsupported event metadata: {sorted(unknown_metadata)}")
+        if any(not item for item in value.values()):
+            raise ValueError("event metadata values cannot be empty")
+        return value
 
     @staticmethod
     def _validate_identifier(value: str, name: str) -> None:
