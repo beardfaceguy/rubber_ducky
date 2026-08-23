@@ -38,6 +38,25 @@ class PersistenceConflict(ValueError):
     """Raised when an idempotency key is reused for different data."""
 
 
+@dataclass(frozen=True)
+class StoredEvent:
+    event_id: str
+    event: ReviewEvent
+
+
+@dataclass(frozen=True)
+class StoredReview:
+    request: ReviewRequest
+    audit_slug: str | None
+    events: tuple[StoredEvent, ...]
+
+
+@dataclass(frozen=True)
+class EventAppendResult:
+    state: ReviewState
+    appended: bool
+
+
 @contextmanager
 def sqlite_review_checkpointer(
     database_path: Path,
@@ -66,7 +85,8 @@ class SqliteReviewStore:
                 """
                 CREATE TABLE IF NOT EXISTS reviews (
                     thread_id TEXT PRIMARY KEY,
-                    request_json TEXT NOT NULL
+                    request_json TEXT NOT NULL,
+                    audit_slug TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS review_events (
@@ -79,6 +99,13 @@ class SqliteReviewStore:
                     UNIQUE (thread_id, event_id),
                     FOREIGN KEY (thread_id) REFERENCES reviews(thread_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS audited_events (
+                    thread_id TEXT NOT NULL,
+                    event_id TEXT NOT NULL,
+                    PRIMARY KEY (thread_id, event_id),
+                    FOREIGN KEY (thread_id) REFERENCES reviews(thread_id)
+                );
                 """
             )
 
@@ -86,6 +113,7 @@ class SqliteReviewStore:
         self,
         thread_id: str,
         request: ReviewRequest,
+        audit_slug: str,
     ) -> ReviewState:
         """Persist a new review request and return its initial state."""
 
@@ -93,17 +121,25 @@ class SqliteReviewStore:
         with self._connect() as connection:
             try:
                 connection.execute(
-                    "INSERT INTO reviews(thread_id, request_json) VALUES (?, ?)",
-                    (thread_id, request.model_dump_json()),
+                    """
+                    INSERT INTO reviews(thread_id, request_json, audit_slug)
+                    VALUES (?, ?, ?)
+                    """,
+                    (thread_id, request.model_dump_json(), audit_slug),
                 )
             except sqlite3.IntegrityError as error:
                 existing = connection.execute(
-                    "SELECT request_json FROM reviews WHERE thread_id = ?",
+                    """
+                    SELECT request_json, audit_slug
+                    FROM reviews
+                    WHERE thread_id = ?
+                    """,
                     (thread_id,),
                 ).fetchone()
                 if (
                     existing is not None
                     and ReviewRequest.model_validate_json(existing[0]) == request
+                    and existing[1] == audit_slug
                 ):
                     return self._load_review(connection, thread_id)
                 raise PersistenceConflict(
@@ -126,6 +162,16 @@ class SqliteReviewStore:
     ) -> ReviewState:
         """Validate and durably append one idempotent protocol event."""
 
+        return self.append_event_once(thread_id, event_id, event).state
+
+    def append_event_once(
+        self,
+        thread_id: str,
+        event_id: str,
+        event: ReviewEvent,
+    ) -> EventAppendResult:
+        """Append an event and report whether this call inserted it."""
+
         self._validate_identifier(thread_id, "thread ID")
         self._validate_identifier(event_id, "event ID")
         event_type, payload_json = self._serialize_event(event)
@@ -143,7 +189,7 @@ class SqliteReviewStore:
             ).fetchone()
             if existing is not None:
                 if existing == (event_type, payload_json):
-                    return state
+                    return EventAppendResult(state=state, appended=False)
                 raise PersistenceConflict(
                     f"event ID {event_id!r} was reused with different data"
                 )
@@ -165,7 +211,44 @@ class SqliteReviewStore:
                 """,
                 (thread_id, sequence, event_id, event_type, payload_json),
             )
-            return next_state
+            return EventAppendResult(state=next_state, appended=True)
+
+    def load_history(self, thread_id: str) -> StoredReview:
+        """Load validated request metadata and ordered protocol events."""
+
+        self._validate_identifier(thread_id, "thread ID")
+        with self._connect() as connection:
+            return self._load_history(connection, thread_id)
+
+    def is_event_audited(self, thread_id: str, event_id: str) -> bool:
+        """Return whether the audit projection committed an event."""
+
+        self._validate_identifier(thread_id, "thread ID")
+        self._validate_identifier(event_id, "event ID")
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT 1
+                FROM audited_events
+                WHERE thread_id = ? AND event_id = ?
+                """,
+                (thread_id, event_id),
+            ).fetchone()
+        return row is not None
+
+    def mark_event_audited(self, thread_id: str, event_id: str) -> None:
+        """Idempotently record a completed audit-log projection."""
+
+        self._validate_identifier(thread_id, "thread ID")
+        self._validate_identifier(event_id, "event ID")
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO audited_events(thread_id, event_id)
+                VALUES (?, ?)
+                """,
+                (thread_id, event_id),
+            )
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -182,27 +265,49 @@ class SqliteReviewStore:
         connection: sqlite3.Connection,
         thread_id: str,
     ) -> ReviewState:
+        history = self._load_history(connection, thread_id)
+        return replay_review(
+            history.request,
+            tuple(stored.event for stored in history.events),
+        )
+
+    def _load_history(
+        self,
+        connection: sqlite3.Connection,
+        thread_id: str,
+    ) -> StoredReview:
         request_row = connection.execute(
-            "SELECT request_json FROM reviews WHERE thread_id = ?",
+            """
+            SELECT request_json, audit_slug
+            FROM reviews
+            WHERE thread_id = ?
+            """,
             (thread_id,),
         ).fetchone()
         if request_row is None:
             raise ReviewNotFound(thread_id)
         event_rows = connection.execute(
             """
-            SELECT event_type, payload_json
+            SELECT event_id, event_type, payload_json
             FROM review_events
             WHERE thread_id = ?
             ORDER BY sequence
             """,
             (thread_id,),
         ).fetchall()
-        events = tuple(
-            self._deserialize_event(event_type, payload_json)
-            for event_type, payload_json in event_rows
+        stored_events = tuple(
+            StoredEvent(
+                event_id=event_id,
+                event=self._deserialize_event(event_type, payload_json),
+            )
+            for event_id, event_type, payload_json in event_rows
         )
         request = ReviewRequest.model_validate_json(request_row[0])
-        return replay_review(request, events)
+        return StoredReview(
+            request=request,
+            audit_slug=request_row[1],
+            events=stored_events,
+        )
 
     @staticmethod
     def _serialize_event(event: ReviewEvent) -> tuple[str, str]:

@@ -13,6 +13,7 @@ from agent_review.lifecycle import (
     ReviewState,
     ReviewStatus,
     apply_event,
+    expected_event_type,
     start_review,
 )
 from agent_review.models import ReviewRequest
@@ -31,13 +32,6 @@ _TERMINAL_STATUSES = {
     ReviewStatus.ESCALATED,
 }
 
-_EXPECTED_EVENT_TYPES = {
-    ReviewStatus.AWAITING_REVIEW_RESPONSE: "review_response",
-    ReviewStatus.AWAITING_REBUTTAL: "rebuttal",
-    ReviewStatus.AWAITING_FINAL_POSITION: "rebuttal",
-    ReviewStatus.AWAITING_ESCALATION_SUMMARY: "escalation_summary",
-}
-
 
 def _initialize(state: ReviewWorkflowState) -> ReviewWorkflowState:
     return {"review": start_review(state["request"])}
@@ -50,9 +44,14 @@ def _wait_for_event(state: ReviewWorkflowState) -> ReviewWorkflowState:
         if review.status is ReviewStatus.AWAITING_REVIEW_RESPONSE
         else len(review.responses)
     )
+    event_type = expected_event_type(review.status)
+    if event_type is None:
+        raise ValueError(
+            f"terminal review cannot wait for event: {review.status.value}"
+        )
     payload: dict[str, str | int] = {
         "status": review.status.value,
-        "event_type": _EXPECTED_EVENT_TYPES[review.status],
+        "event_type": event_type,
     }
     if review.status is not ReviewStatus.AWAITING_ESCALATION_SUMMARY:
         payload["round"] = expected_round

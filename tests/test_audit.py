@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_review.audit import ArtifactEvidence, AuditLog
+from agent_review.audit import ArtifactConflict, ArtifactEvidence, AuditLog
 from agent_review.models import (
     BlockingConcernResponse,
     Concern,
@@ -37,6 +37,14 @@ def test_create_uses_protocol_compatible_layout(tmp_path: Path) -> None:
     assert audit.log_path.read_text(encoding="utf-8") == (
         "# Agent Review Log\n**Protocol:** review-protocol.md v1.3\n"
     )
+
+
+def test_open_validates_existing_log_and_artifact_directory(tmp_path: Path) -> None:
+    created = AuditLog.create(tmp_path, task_id="AR-3", slug="audit-logging")
+
+    reopened = AuditLog.open(tmp_path, task_id="AR-3", slug="audit-logging")
+
+    assert reopened == created
 
 
 def test_create_never_overwrites_existing_log(tmp_path: Path) -> None:
@@ -115,11 +123,29 @@ def test_append_never_overwrites_existing_artifact(tmp_path: Path) -> None:
     )
     audit.append(request)
     original_log = audit.log_path.read_text(encoding="utf-8")
+    conflicting = request.model_copy(update={"relevant_diff": "+changed = True"})
 
-    with pytest.raises(FileExistsError):
-        audit.append(request)
+    with pytest.raises(ArtifactConflict):
+        audit.append(conflicting)
 
     assert audit.log_path.read_text(encoding="utf-8") == original_log
+
+
+def test_identical_orphaned_artifact_is_reused_after_crash(tmp_path: Path) -> None:
+    audit = AuditLog.create(tmp_path, task_id="AR-3", slug="audit-logging")
+    request = ReviewRequest(
+        task_id="AR-3",
+        title="Add audit logging",
+        proposed_solution="Recover interrupted artifact writes.",
+        relevant_diff="+immutable = True",
+    )
+    artifact_path = audit.artifacts_dir / "round-1-review-request.diff"
+    artifact_path.write_text(request.relevant_diff, encoding="utf-8")
+
+    evidence = audit.append(request, event_id="request")
+
+    assert evidence is not None
+    assert "## Review Request — Round 1" in audit.log_path.read_text(encoding="utf-8")
 
 
 def test_failed_log_append_removes_uncommitted_artifact(
@@ -223,6 +249,20 @@ def test_messages_are_appended_in_order(tmp_path: Path) -> None:
     log = audit.log_path.read_text(encoding="utf-8")
     assert log.index("## Review Request") < log.index("## Review Response")
     assert log.count("# Agent Review Log") == 1
+
+
+def test_event_id_is_rendered_as_metadata(tmp_path: Path) -> None:
+    audit = AuditLog.create(tmp_path, task_id="AR-3", slug="audit-logging")
+    response = ReviewResponse(
+        round=1,
+        position=Position.AGREE,
+        verdict=Verdict.APPROVE,
+    )
+
+    audit.append(response, event_id="event-1")
+    log = audit.log_path.read_text(encoding="utf-8")
+
+    assert '<!-- event id="event-1" -->' in log
 
 
 def test_append_rebuttal_records_revised_diff_artifact(tmp_path: Path) -> None:

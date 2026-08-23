@@ -11,8 +11,13 @@ dependencies = [
     "langchain-core>=1.6.0",
     "langgraph>=1.2.11",
     "langgraph-checkpoint-sqlite>=3.1.1",
+    "mcp>=2.0.0",
     "pydantic>=2.13.4",
 ]
+
+[project.scripts]
+agent-review = "agent_review.cli:run"
+agent-review-mcp = "agent_review.mcp_server:run"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

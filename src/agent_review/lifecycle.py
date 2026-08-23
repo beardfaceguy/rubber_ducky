@@ -26,6 +26,20 @@ class ReviewStatus(StrEnum):
     ESCALATED = "escalated"
 
 
+_EXPECTED_EVENT_TYPES = {
+    ReviewStatus.AWAITING_REVIEW_RESPONSE: "review_response",
+    ReviewStatus.AWAITING_REBUTTAL: "rebuttal",
+    ReviewStatus.AWAITING_FINAL_POSITION: "rebuttal",
+    ReviewStatus.AWAITING_ESCALATION_SUMMARY: "escalation_summary",
+}
+
+
+def expected_event_type(status: ReviewStatus) -> str | None:
+    """Return the protocol event expected for a non-terminal status."""
+
+    return _EXPECTED_EVENT_TYPES.get(status)
+
+
 class ReviewState(BaseModel):
     """Immutable aggregate state for one review conversation."""
 

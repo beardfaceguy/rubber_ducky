@@ -36,10 +36,21 @@ def make_request() -> ReviewRequest:
     )
 
 
+def create_review(
+    store: SqliteReviewStore,
+    request: ReviewRequest | None = None,
+):
+    return store.create_review(
+        "review-1",
+        make_request() if request is None else request,
+        audit_slug="persistence",
+    )
+
+
 def test_review_survives_store_reopen(tmp_path: Path) -> None:
     database = tmp_path / "reviews.sqlite"
     first_store = SqliteReviewStore(database)
-    created = first_store.create_review("review-1", make_request())
+    created = create_review(first_store)
 
     reopened = SqliteReviewStore(database).load_review("review-1")
 
@@ -49,42 +60,42 @@ def test_review_survives_store_reopen(tmp_path: Path) -> None:
 
 def test_create_review_is_idempotent_for_same_request(tmp_path: Path) -> None:
     store = SqliteReviewStore(tmp_path / "reviews.sqlite")
-    first = store.create_review("review-1", make_request())
+    first = create_review(store)
 
-    duplicate = store.create_review("review-1", make_request())
+    duplicate = create_review(store)
 
     assert duplicate == first
 
 
 def test_duplicate_create_returns_current_replayed_state(tmp_path: Path) -> None:
     store = SqliteReviewStore(tmp_path / "reviews.sqlite")
-    store.create_review("review-1", make_request())
+    create_review(store)
     store.append_event(
         "review-1",
         "event-1",
         ReviewResponse(round=1, position="AGREE", verdict="APPROVE"),
     )
 
-    duplicate = store.create_review("review-1", make_request())
+    duplicate = create_review(store)
 
     assert duplicate.status is ReviewStatus.APPROVED
 
 
 def test_create_review_rejects_conflicting_request(tmp_path: Path) -> None:
     store = SqliteReviewStore(tmp_path / "reviews.sqlite")
-    store.create_review("review-1", make_request())
+    create_review(store)
     conflicting = make_request().model_copy(
         update={"relevant_diff": "+different = True"}
     )
 
     with pytest.raises(PersistenceConflict):
-        store.create_review("review-1", conflicting)
+        create_review(store, conflicting)
 
 
 def test_persisted_event_replays_after_reopen(tmp_path: Path) -> None:
     database = tmp_path / "reviews.sqlite"
     store = SqliteReviewStore(database)
-    store.create_review("review-1", make_request())
+    create_review(store)
     approval = ReviewResponse(
         round=1,
         position="AGREE",
@@ -100,7 +111,7 @@ def test_persisted_event_replays_after_reopen(tmp_path: Path) -> None:
 
 def test_append_event_is_idempotent_for_same_event(tmp_path: Path) -> None:
     store = SqliteReviewStore(tmp_path / "reviews.sqlite")
-    store.create_review("review-1", make_request())
+    create_review(store)
     approval = ReviewResponse(
         round=1,
         position="AGREE",
@@ -115,7 +126,7 @@ def test_append_event_is_idempotent_for_same_event(tmp_path: Path) -> None:
 
 def test_append_event_rejects_conflicting_idempotency_key(tmp_path: Path) -> None:
     store = SqliteReviewStore(tmp_path / "reviews.sqlite")
-    store.create_review("review-1", make_request())
+    create_review(store)
     store.append_event(
         "review-1",
         "event-1",
@@ -133,7 +144,7 @@ def test_append_event_rejects_conflicting_idempotency_key(tmp_path: Path) -> Non
 
 def test_invalid_event_rolls_back_idempotency_key(tmp_path: Path) -> None:
     store = SqliteReviewStore(tmp_path / "reviews.sqlite")
-    store.create_review("review-1", make_request())
+    create_review(store)
     invalid = ReviewResponse(
         round=2,
         position="AGREE",
@@ -178,7 +189,7 @@ def test_langgraph_interrupt_resumes_after_process_reopen(tmp_path: Path) -> Non
 def test_unknown_persisted_event_type_fails_closed(tmp_path: Path) -> None:
     database = tmp_path / "reviews.sqlite"
     store = SqliteReviewStore(database)
-    store.create_review("review-1", make_request())
+    create_review(store)
     store.append_event(
         "review-1",
         "event-1",
@@ -197,7 +208,7 @@ def test_unknown_persisted_event_type_fails_closed(tmp_path: Path) -> None:
 def test_multi_round_history_replays_every_event_type(tmp_path: Path) -> None:
     database = tmp_path / "reviews.sqlite"
     store = SqliteReviewStore(database)
-    store.create_review("review-1", make_request())
+    create_review(store)
     blocker = Concern(id="B1", kind=ConcernKind.BLOCKING, text="Still blocked.")
     store.append_event(
         "review-1",
@@ -253,7 +264,7 @@ def test_multi_round_history_replays_every_event_type(tmp_path: Path) -> None:
 
 def test_concurrent_duplicate_event_is_idempotent(tmp_path: Path) -> None:
     store = SqliteReviewStore(tmp_path / "reviews.sqlite")
-    store.create_review("review-1", make_request())
+    create_review(store)
     approval = ReviewResponse(round=1, position="AGREE", verdict="APPROVE")
     barrier = Barrier(2)
 
@@ -271,7 +282,7 @@ def test_concurrent_distinct_events_cannot_advance_same_round_twice(
     tmp_path: Path,
 ) -> None:
     store = SqliteReviewStore(tmp_path / "reviews.sqlite")
-    store.create_review("review-1", make_request())
+    create_review(store)
     approval = ReviewResponse(round=1, position="AGREE", verdict="APPROVE")
     barrier = Barrier(2)
 

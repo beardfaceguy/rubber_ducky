@@ -22,12 +22,33 @@ from agent_review.models import (
 
 _TASK_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 _SLUG_PATTERN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+_EVENT_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,254}")
+_LOG_HEADER = "# Agent Review Log\n**Protocol:** review-protocol.md v1.3\n"
 
 
 def _validate_component(value: str, pattern: re.Pattern[str], name: str) -> str:
     if not pattern.fullmatch(value):
         raise ValueError(f"invalid {name}: {value!r}")
     return value
+
+
+class AuditIdentityConflict(ValueError):
+    """Raised when a log path belongs to a different review thread."""
+
+
+class ArtifactConflict(ValueError):
+    """Raised when an existing artifact differs from the reviewed bytes."""
+
+
+def _log_header(thread_id: str | None) -> str:
+    if thread_id is None:
+        return _LOG_HEADER
+    safe_thread_id = _validate_component(
+        thread_id,
+        _EVENT_ID_PATTERN,
+        "thread ID",
+    )
+    return f'{_LOG_HEADER}<!-- review thread_id="{safe_thread_id}" -->\n'
 
 
 def _numbered(items: tuple[str, ...], empty: str) -> str:
@@ -143,6 +164,7 @@ class AuditLog:
     """Paths and append operations for one review conversation."""
 
     workspace_root: Path
+    thread_id: str | None
     task_id: str
     slug: str
     key: str
@@ -155,6 +177,8 @@ class AuditLog:
         workspace_root: Path,
         task_id: str,
         slug: str,
+        *,
+        thread_id: str | None = None,
     ) -> "AuditLog":
         """Create a new review log and its private artifact directory.
 
@@ -181,9 +205,7 @@ class AuditLog:
                 errors="strict",
             ) as log_file:
                 log_created = True
-                log_file.write(
-                    "# Agent Review Log\n**Protocol:** review-protocol.md v1.3\n"
-                )
+                log_file.write(_log_header(thread_id))
             artifacts_dir.mkdir(parents=True, exist_ok=True)
         except Exception:
             if log_created:
@@ -191,6 +213,51 @@ class AuditLog:
             raise
         return cls(
             workspace_root=workspace_root,
+            thread_id=thread_id,
+            task_id=safe_task_id,
+            slug=safe_slug,
+            key=key,
+            log_path=log_path,
+            artifacts_dir=artifacts_dir,
+        )
+
+    @classmethod
+    def open(
+        cls,
+        workspace_root: Path,
+        task_id: str,
+        slug: str,
+        *,
+        thread_id: str | None = None,
+    ) -> "AuditLog":
+        """Open an existing review after validating its paths and header."""
+
+        safe_task_id = _validate_component(task_id, _TASK_ID_PATTERN, "task ID")
+        safe_slug = _validate_component(slug, _SLUG_PATTERN, "slug")
+        if len(safe_slug) > 80:
+            raise ValueError("slug must be at most 80 characters")
+
+        key = f"{safe_task_id}-{safe_slug}"
+        audit_root = workspace_root / "agent_review"
+        log_path = audit_root / f"{key}.md"
+        artifacts_dir = audit_root / key / "artifacts"
+        if (
+            not log_path.is_file()
+            or log_path.is_symlink()
+            or not artifacts_dir.is_dir()
+            or artifacts_dir.is_symlink()
+        ):
+            raise FileNotFoundError(f"review audit {key!r} is incomplete")
+        log_text = log_path.read_text(encoding="utf-8")
+        if not log_text.startswith(_LOG_HEADER):
+            raise ValueError(f"review audit {key!r} has an invalid header")
+        if thread_id is not None and not log_text.startswith(_log_header(thread_id)):
+            raise AuditIdentityConflict(
+                f"review audit {key!r} belongs to a different thread"
+            )
+        return cls(
+            workspace_root=workspace_root,
+            thread_id=thread_id,
             task_id=safe_task_id,
             slug=safe_slug,
             key=key,
@@ -201,14 +268,27 @@ class AuditLog:
     def append(
         self,
         event: ReviewRequest | ReviewResponse | Rebuttal | EscalationSummary,
+        *,
+        event_id: str | None = None,
     ) -> ArtifactEvidence | None:
         """Append one protocol message and return its artifact evidence."""
 
+        if event_id is not None:
+            safe_event_id = _validate_component(
+                event_id,
+                _EVENT_ID_PATTERN,
+                "event ID",
+            )
+        else:
+            safe_event_id = None
+
         if isinstance(event, ReviewResponse):
-            self._append_text(f"\n{_render_response(event)}")
+            metadata = self._metadata(safe_event_id)
+            self._append_text(f"\n{metadata}{_render_response(event)}")
             return None
         if isinstance(event, EscalationSummary):
-            self._append_text(f"\n{_render_escalation(event)}")
+            metadata = self._metadata(safe_event_id)
+            self._append_text(f"\n{metadata}{_render_escalation(event)}")
             return None
 
         if isinstance(event, Rebuttal):
@@ -216,7 +296,8 @@ class AuditLog:
             artifact_text = event.revised_diff
             rendered_event = _render_rebuttal(event)
             if artifact_text == UNCHANGED_DIFF:
-                self._append_text(f"\n{rendered_event}")
+                metadata = self._metadata(safe_event_id)
+                self._append_text(f"\n{metadata}{rendered_event}")
                 return None
         else:
             if event.task_id != self.task_id:
@@ -230,23 +311,46 @@ class AuditLog:
 
         artifact_path = self.artifacts_dir / artifact_name
         artifact_bytes = artifact_text.encode("utf-8", errors="strict")
-        with artifact_path.open("xb") as artifact_file:
-            artifact_file.write(artifact_bytes)
+        artifact_created = False
+        try:
+            with artifact_path.open("xb") as artifact_file:
+                artifact_file.write(artifact_bytes)
+                artifact_created = True
+        except FileExistsError as error:
+            if artifact_path.read_bytes() != artifact_bytes:
+                raise ArtifactConflict(
+                    f"artifact {artifact_path.name!r} already exists with different bytes"
+                ) from error
 
         evidence = ArtifactEvidence(
             relative_path=artifact_path.relative_to(self.log_path.parent).as_posix(),
             sha256=sha256(artifact_bytes).hexdigest(),
         )
-        metadata = (
-            f'<!-- artifact path="{evidence.relative_path}" '
-            f'sha256="{evidence.sha256}" -->\n'
-        )
+        metadata = self._metadata(safe_event_id, evidence)
         try:
             self._append_text(f"\n{metadata}{rendered_event}")
         except Exception:
-            artifact_path.unlink(missing_ok=True)
+            if artifact_created:
+                artifact_path.unlink(missing_ok=True)
             raise
         return evidence
+
+    @staticmethod
+    def _metadata(
+        event_id: str | None,
+        evidence: ArtifactEvidence | None = None,
+    ) -> str:
+        attributes: list[str] = []
+        if event_id is not None:
+            attributes.append(f'event id="{event_id}"')
+        if evidence is not None:
+            attributes.extend(
+                (
+                    f'artifact path="{evidence.relative_path}"',
+                    f'sha256="{evidence.sha256}"',
+                )
+            )
+        return f"<!-- {' '.join(attributes)} -->\n" if attributes else ""
 
     def _append_text(self, text: str) -> None:
         descriptor = os.open(self.log_path, os.O_WRONLY | os.O_APPEND)

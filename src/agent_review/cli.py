@@ -1,0 +1,126 @@
+"""Stable JSON command-line interface for durable agent reviews."""
+
+import argparse
+import json
+import sys
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any, TextIO
+
+from pydantic import BaseModel, ValidationError
+
+from agent_review.lifecycle import InvalidTransition, ReviewState, expected_event_type
+from agent_review.models import (
+    EscalationSummary,
+    Rebuttal,
+    ReviewRequest,
+    ReviewResponse,
+)
+from agent_review.persistence import PersistenceConflict, ReviewNotFound
+from agent_review.service import ReviewService
+
+
+class CliInputError(ValueError):
+    """Raised for command syntax or input-document errors."""
+
+
+class JsonArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        raise CliInputError(message)
+
+
+def _build_parser() -> JsonArgumentParser:
+    parser = JsonArgumentParser(prog="agent-review")
+    parser.add_argument("--workspace", type=Path, default=Path.cwd())
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    start = commands.add_parser("start")
+    start.add_argument("thread_id")
+    start.add_argument("slug")
+    start.add_argument("--input", required=True)
+
+    status = commands.add_parser("status")
+    status.add_argument("thread_id")
+
+    for name in ("respond", "rebut", "resume"):
+        event = commands.add_parser(name)
+        event.add_argument("thread_id")
+        event.add_argument("event_id")
+        event.add_argument("--input", required=True)
+    return parser
+
+
+def _read_model(path: str, model: type[BaseModel]) -> BaseModel:
+    try:
+        text = (
+            sys.stdin.read() if path == "-" else Path(path).read_text(encoding="utf-8")
+        )
+        payload = json.loads(text)
+    except (OSError, json.JSONDecodeError) as error:
+        raise CliInputError(str(error)) from error
+    return model.model_validate(payload)
+
+
+def _result(thread_id: str, state: ReviewState) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "thread_id": thread_id,
+        "state": state.model_dump(mode="json"),
+        "expected_event": expected_event_type(state.status),
+    }
+
+
+def _emit(payload: dict[str, Any], *, stream: TextIO | None = None) -> None:
+    output = sys.stdout if stream is None else stream
+    output.write(json.dumps(payload, sort_keys=True) + "\n")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Execute one CLI command and return a stable process exit code."""
+
+    try:
+        arguments = _build_parser().parse_args(argv)
+        service = ReviewService(arguments.workspace.resolve())
+        if arguments.command == "start":
+            request = _read_model(arguments.input, ReviewRequest)
+            state = service.start(arguments.thread_id, arguments.slug, request)
+        elif arguments.command == "status":
+            state = service.status(arguments.thread_id)
+        else:
+            model = {
+                "respond": ReviewResponse,
+                "rebut": Rebuttal,
+                "resume": EscalationSummary,
+            }[arguments.command]
+            event = _read_model(arguments.input, model)
+            state = service.submit(arguments.thread_id, arguments.event_id, event)
+        _emit(_result(arguments.thread_id, state))
+        return 0
+    except ReviewNotFound as error:
+        _emit(
+            {"ok": False, "error": str(error), "error_type": type(error).__name__},
+            stream=sys.stderr,
+        )
+        return 3
+    except (PersistenceConflict, InvalidTransition) as error:
+        _emit(
+            {"ok": False, "error": str(error), "error_type": type(error).__name__},
+            stream=sys.stderr,
+        )
+        return 4
+    except (CliInputError, ValidationError, ValueError) as error:
+        _emit(
+            {"ok": False, "error": str(error), "error_type": type(error).__name__},
+            stream=sys.stderr,
+        )
+        return 2
+    except Exception as error:  # noqa: BLE001 - CLI boundary must always emit JSON.
+        _emit(
+            {"ok": False, "error": str(error), "error_type": type(error).__name__},
+            stream=sys.stderr,
+        )
+        return 5
+
+
+def run() -> None:
+    raise SystemExit(main())

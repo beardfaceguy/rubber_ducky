@@ -1,0 +1,175 @@
+"""Durable application service coordinating journal, audit, and workflow."""
+
+from dataclasses import dataclass
+from functools import cached_property
+from pathlib import Path
+
+from langgraph.types import Command
+
+from agent_review.audit import ArtifactConflict, AuditIdentityConflict, AuditLog
+from agent_review.lifecycle import ReviewEvent, ReviewState, replay_review
+from agent_review.models import ReviewRequest
+from agent_review.persistence import (
+    PersistenceConflict,
+    SqliteReviewStore,
+    StoredReview,
+    sqlite_review_checkpointer,
+)
+from agent_review.workflow import build_review_graph
+
+
+@dataclass(frozen=True)
+class ReviewService:
+    """Coordinate durable review side effects in recoverable order."""
+
+    workspace_root: Path
+
+    def __post_init__(self) -> None:
+        (self.workspace_root / "agent_review").mkdir(parents=True, exist_ok=True)
+
+    @property
+    def database_path(self) -> Path:
+        return self.workspace_root / "agent_review" / "reviews.sqlite"
+
+    @cached_property
+    def store(self) -> SqliteReviewStore:
+        return SqliteReviewStore(self.database_path)
+
+    def start(
+        self,
+        thread_id: str,
+        slug: str,
+        request: ReviewRequest,
+    ) -> ReviewState:
+        """Start or recover a review and its human-readable audit."""
+
+        try:
+            audit: AuditLog | None = AuditLog.open(
+                self.workspace_root,
+                request.task_id,
+                slug,
+                thread_id=thread_id,
+            )
+        except FileNotFoundError:
+            audit = None
+        except AuditIdentityConflict as error:
+            raise PersistenceConflict(str(error)) from error
+
+        self.store.create_review(
+            thread_id,
+            request,
+            audit_slug=slug,
+        )
+        if audit is None:
+            try:
+                audit = AuditLog.create(
+                    self.workspace_root,
+                    request.task_id,
+                    slug,
+                    thread_id=thread_id,
+                )
+            except FileExistsError:
+                try:
+                    audit = AuditLog.open(
+                        self.workspace_root,
+                        request.task_id,
+                        slug,
+                        thread_id=thread_id,
+                    )
+                except AuditIdentityConflict as error:
+                    raise PersistenceConflict(str(error)) from error
+        if not self.store.is_event_audited(thread_id, "request"):
+            try:
+                audit.append(request, event_id="request")
+            except ArtifactConflict as error:
+                raise PersistenceConflict(str(error)) from error
+            self.store.mark_event_audited(thread_id, "request")
+        return self.status(thread_id)
+
+    def status(self, thread_id: str) -> ReviewState:
+        """Return canonical state, writing repairs to a lagging checkpoint."""
+
+        history = self.store.load_history(thread_id)
+        canonical = replay_review(
+            history.request,
+            tuple(stored.event for stored in history.events),
+        )
+        self._reconcile_graph(thread_id, history, canonical)
+        return canonical
+
+    def submit(
+        self,
+        thread_id: str,
+        event_id: str,
+        event: ReviewEvent,
+    ) -> ReviewState:
+        """Journal, audit, then apply an event.
+
+        Journal and graph state are idempotent. Markdown audit projection is
+        at-least-once: a crash after append but before its SQLite marker may
+        produce a visible duplicate entry on retry rather than lose evidence.
+        """
+
+        result = self.store.append_event_once(thread_id, event_id, event)
+        history = self.store.load_history(thread_id)
+        audit = self._open_audit(thread_id, history)
+        if result.appended or not self.store.is_event_audited(thread_id, event_id):
+            try:
+                audit.append(event, event_id=event_id)
+            except ArtifactConflict as error:
+                raise PersistenceConflict(str(error)) from error
+            self.store.mark_event_audited(thread_id, event_id)
+        self._reconcile_graph(thread_id, history, result.state)
+        return result.state
+
+    def _open_audit(self, thread_id: str, history: StoredReview) -> AuditLog:
+        if history.audit_slug is None:
+            raise PersistenceConflict("review has no persisted audit slug")
+        try:
+            return AuditLog.open(
+                self.workspace_root,
+                history.request.task_id,
+                history.audit_slug,
+                thread_id=thread_id,
+            )
+        except AuditIdentityConflict as error:
+            raise PersistenceConflict(str(error)) from error
+
+    def _reconcile_graph(
+        self,
+        thread_id: str,
+        history: StoredReview,
+        canonical: ReviewState,
+    ) -> None:
+        config = {"configurable": {"thread_id": thread_id}}
+        events = tuple(stored.event for stored in history.events)
+        with sqlite_review_checkpointer(self.database_path) as checkpointer:
+            graph = build_review_graph(checkpointer)
+            snapshot = graph.get_state(config)
+            checkpoint_review = snapshot.values.get("review")
+            if checkpoint_review is None:
+                graph.invoke({"request": history.request}, config)
+                checkpoint_review = graph.get_state(config).values["review"]
+
+            applied_events = (
+                len(checkpoint_review.responses)
+                + len(checkpoint_review.rebuttals)
+                + (1 if checkpoint_review.escalation_summary is not None else 0)
+            )
+            if applied_events > len(events):
+                raise PersistenceConflict("checkpoint is ahead of canonical journal")
+            expected_checkpoint = replay_review(
+                history.request,
+                events[:applied_events],
+            )
+            if checkpoint_review != expected_checkpoint:
+                raise PersistenceConflict("checkpoint diverges from canonical journal")
+
+            for event in events[applied_events:]:
+                graph.invoke(Command(resume=event), config)
+
+            final_review = graph.get_state(config).values["review"]
+            if final_review != canonical:
+                raise PersistenceConflict(
+                    "checkpoint did not converge to canonical journal"
+                )
