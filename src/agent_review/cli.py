@@ -113,7 +113,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             state = service.status(arguments.thread_id)
         elif arguments.command == "review":
             config = load_reviewer_config(
-                arguments.workspace.resolve(),
                 provider=arguments.provider,
                 model=arguments.model,
                 api_key_env=arguments.api_key_env,

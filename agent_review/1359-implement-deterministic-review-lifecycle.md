@@ -2,7 +2,7 @@
 **Protocol:** review-protocol.md v1.3
 
 ## Review Request — Round 1
-**Task:** Vikunja #3 — implement deterministic review lifecycle
+**Task:** Vikunja 1359 — implement deterministic review lifecycle
 **Protocol:** review-protocol.md v1.3 — respond using the Review Response format.
 
 ### Proposed Solution

@@ -2,7 +2,7 @@
 **Protocol:** review-protocol.md v1.3
 
 ## Review Request — Round 1
-**Task:** Vikunja #14 — add reviewer model configuration and factory
+**Task:** Vikunja 1379 — add reviewer model configuration and factory
 **Protocol:** review-protocol.md v1.3 — respond using the Review Response format.
 
 ### Proposed Solution

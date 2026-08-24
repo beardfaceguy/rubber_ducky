@@ -1,11 +1,11 @@
 """Provider-neutral LangChain adapters for review participants."""
 
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import Runnable
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agent_review.lifecycle import (
     InvalidTransition,
@@ -15,10 +15,14 @@ from agent_review.lifecycle import (
 )
 from agent_review.models import (
     UNCHANGED_DIFF,
+    Concern,
     Disposition,
     EscalationSummary,
+    Position,
+    ProtocolModel,
     Rebuttal,
     ReviewResponse,
+    Verdict,
 )
 
 
@@ -30,6 +34,16 @@ class StructuredOutputModel(Protocol):
         schema: type[BaseModel],
         **kwargs: Any,
     ) -> Runnable[Any, Any]: ...
+
+
+class _RoundOneReviewResponse(ProtocolModel):
+    """Reviewer output fields valid before any worker rebuttal exists."""
+
+    round: Literal[1]
+    position: Position
+    blocking_concerns: tuple[Concern, ...] = Field(default_factory=tuple)
+    suggestions: tuple[Concern, ...] = Field(default_factory=tuple)
+    verdict: Verdict
 
 
 def _participant_messages(
@@ -66,9 +80,13 @@ class ReviewerAdapter:
             raise InvalidTransition(
                 f"reviewer cannot act while status is {state.status.value}"
             )
-        runnable = self.model.with_structured_output(ReviewResponse)
+        response_schema: type[BaseModel] = (
+            _RoundOneReviewResponse if not state.responses else ReviewResponse
+        )
+        runnable = self.model.with_structured_output(response_schema)
         raw_response = runnable.invoke(_participant_messages("reviewer", state))
-        response = ReviewResponse.model_validate(raw_response)
+        structured_response = response_schema.model_validate(raw_response)
+        response = ReviewResponse.model_validate(structured_response.model_dump())
         apply_event(state, response)
         return response
 

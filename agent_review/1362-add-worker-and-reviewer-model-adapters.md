@@ -2,7 +2,7 @@
 **Protocol:** review-protocol.md v1.3
 
 ## Review Request — Round 1
-**Task:** Vikunja #6 — add worker and reviewer model adapters
+**Task:** Vikunja 1362 — add worker and reviewer model adapters
 **Protocol:** review-protocol.md v1.3 — respond using the Review Response format.
 
 ### Proposed Solution

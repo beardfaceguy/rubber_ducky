@@ -2,11 +2,13 @@
 
 import json
 import os
+import stat
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any
 
+from dotenv import dotenv_values
 from langchain.chat_models import init_chat_model
 from pydantic import (
     BaseModel,
@@ -21,6 +23,7 @@ from pydantic import (
 from agent_review.adapters import StructuredOutputModel
 
 NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+DEFAULT_PROVIDER_KEY_ENV = "LLM_PROVIDER_KEY"
 
 _SECRET_OPTION_KEYS = {
     "api_key",
@@ -111,7 +114,7 @@ class ProviderDefinition:
 
     builder: ProviderBuilder
     requires_credential: bool = True
-    default_api_key_env: str | None = None
+    default_api_key_env: str | None = DEFAULT_PROVIDER_KEY_ENV
 
 
 def _langchain_provider(
@@ -134,14 +137,8 @@ def _langchain_provider(
 
 
 _BUILTIN_PROVIDERS = {
-    "openai": ProviderDefinition(
-        _langchain_provider,
-        default_api_key_env="OPENAI_API_KEY",
-    ),
-    "anthropic": ProviderDefinition(
-        _langchain_provider,
-        default_api_key_env="ANTHROPIC_API_KEY",
-    ),
+    "openai": ProviderDefinition(_langchain_provider),
+    "anthropic": ProviderDefinition(_langchain_provider),
 }
 
 
@@ -167,7 +164,7 @@ class ReviewerModelFactory:
         *,
         environment: Mapping[str, str] | None = None,
     ) -> StructuredOutputModel:
-        env = os.environ if environment is None else environment
+        env = reviewer_environment() if environment is None else dict(environment)
         definition = self._providers.get(config.provider)
         if definition is None:
             supported = ", ".join(sorted(self._providers))
@@ -186,57 +183,126 @@ class ReviewerModelFactory:
         return definition.builder(config, credential)
 
 
-def load_reviewer_config(
-    workspace_root: Path,
+def reviewer_config_path(
     *,
+    environment: Mapping[str, str] | None = None,
+    home_directory: Path | None = None,
+) -> Path:
+    """Return the global reviewer configuration path."""
+
+    env = os.environ if environment is None else environment
+    xdg_config_home = env.get("XDG_CONFIG_HOME")
+    xdg_path = Path(xdg_config_home) if xdg_config_home else None
+    if xdg_path is not None and xdg_path.is_absolute():
+        config_home = xdg_path
+    else:
+        config_home = (home_directory or Path.home()) / ".config"
+    return config_home / "agent_review" / "config.json"
+
+
+def reviewer_environment(
+    *,
+    config_path: Path | None = None,
+    environment: Mapping[str, str] | None = None,
+    home_directory: Path | None = None,
+) -> dict[str, str]:
+    """Merge global dotenv values with the process environment."""
+
+    process_environment = dict(os.environ if environment is None else environment)
+    resolved_config = config_path or reviewer_config_path(
+        environment=process_environment,
+        home_directory=home_directory,
+    )
+    dotenv_path = resolved_config.parent / ".env"
+    file_environment: dict[str, str] = {}
+    if dotenv_path.exists():
+        try:
+            if os.name == "posix":
+                permissions = stat.S_IMODE(dotenv_path.stat().st_mode)
+                if permissions & 0o077:
+                    raise ReviewerConfigurationError(
+                        f"reviewer dotenv {dotenv_path} has insecure permissions "
+                        f"{permissions:o}; require no group/other permissions "
+                        "(for example 600)"
+                    )
+            parsed = dotenv_values(dotenv_path, interpolate=False)
+        except OSError as error:
+            raise ReviewerConfigurationError(
+                f"cannot read reviewer dotenv {dotenv_path}: {error}"
+            ) from error
+        if any(value is None for value in parsed.values()):
+            raise ReviewerConfigurationError(
+                f"reviewer dotenv {dotenv_path} contains a key without a value"
+            )
+        file_environment = {
+            key: value for key, value in parsed.items() if value is not None
+        }
+    return {**file_environment, **process_environment}
+
+
+def _load_file_values(config_path: Path) -> dict[str, Any]:
+    if not config_path.exists():
+        raise ReviewerConfigurationError(
+            f"reviewer config not found at {config_path}; create it from "
+            "the bundled examples/config.json and set provider/model"
+        )
+    try:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ReviewerConfigurationError(str(error)) from error
+    if not isinstance(payload, dict):
+        raise ReviewerConfigurationError("config.json must contain an object")
+    reviewer = payload.get("reviewer", {})
+    if not isinstance(reviewer, dict):
+        raise ReviewerConfigurationError("config.json reviewer must be an object")
+    unknown_fields = set(reviewer) - {
+        "provider",
+        "model",
+        "api_key_env",
+        "options",
+    }
+    if unknown_fields:
+        raise ReviewerConfigurationError(
+            f"unknown reviewer settings: {sorted(unknown_fields)}"
+        )
+    return reviewer
+
+
+def load_reviewer_config(
+    *,
+    config_path: Path | None = None,
     provider: str | None = None,
     model: str | None = None,
     api_key_env: str | None = None,
     options: Mapping[str, Any] | None = None,
     environment: Mapping[str, str] | None = None,
+    home_directory: Path | None = None,
 ) -> ReviewerModelConfig:
-    """Load explicit, environment, then workspace reviewer settings."""
+    """Load explicit, environment, then global reviewer settings."""
 
     env = os.environ if environment is None else environment
-    config_path = workspace_root / "agent_review" / "config.json"
-    file_values: dict[str, Any] = {}
-    if config_path.exists():
-        try:
-            payload = json.loads(config_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
-            raise ReviewerConfigurationError(str(error)) from error
-        if not isinstance(payload, dict):
-            raise ReviewerConfigurationError("config.json must contain an object")
-        reviewer = payload.get("reviewer", {})
-        if not isinstance(reviewer, dict):
-            raise ReviewerConfigurationError("config.json reviewer must be an object")
-        unknown_fields = set(reviewer) - {
-            "provider",
-            "model",
-            "api_key_env",
-            "options",
-        }
-        if unknown_fields:
-            raise ReviewerConfigurationError(
-                f"unknown reviewer settings: {sorted(unknown_fields)}"
-            )
-        file_values = reviewer
-
     explicit_pair = (provider, model)
     environment_pair = (
         env.get("AGENT_REVIEW_REVIEWER_PROVIDER"),
         env.get("AGENT_REVIEW_REVIEWER_MODEL"),
     )
-    file_pair = (file_values.get("provider"), file_values.get("model"))
     if any(explicit_pair):
         resolved_provider, resolved_model = explicit_pair
         source = "explicit"
+        file_values: dict[str, Any] = {}
     elif any(environment_pair):
         resolved_provider, resolved_model = environment_pair
         source = "environment"
+        file_values = {}
     else:
+        resolved_path = config_path or reviewer_config_path(
+            environment=env,
+            home_directory=home_directory,
+        )
+        file_values = _load_file_values(resolved_path)
+        file_pair = (file_values.get("provider"), file_values.get("model"))
         resolved_provider, resolved_model = file_pair
-        source = "workspace config"
+        source = f"global config {resolved_path}"
     if not resolved_provider or not resolved_model:
         raise ReviewerConfigurationError(
             f"{source} must configure reviewer provider and model together"

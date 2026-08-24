@@ -2,7 +2,7 @@
 **Protocol:** review-protocol.md v1.3
 
 ## Review Request — Round 1
-**Task:** Vikunja #15 — integrate automatic reviewer generation
+**Task:** Vikunja 1380 — integrate automatic reviewer generation
 **Protocol:** review-protocol.md v1.3 — respond using the Review Response format.
 
 ### Proposed Solution
@@ -174,7 +174,8 @@ def generate_review_response(
 ```
 
 Configuration uses the complete reviewed implementation recorded in
-`agent_review/vikunja-14-reviewer-config.md`, including its post-approval
+`agent_review/1379-add-reviewer-model-configuration-and-factory.md`, including
+its post-approval
 hardening. README and both skill copies document:
 
 ```text

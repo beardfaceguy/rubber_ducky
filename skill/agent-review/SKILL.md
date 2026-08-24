@@ -27,6 +27,10 @@ agent-review rebut <thread-id> <event-id> --input <rebuttal.json>
 agent-review resume <thread-id> <event-id> --input <summary.json>
 ```
 
+For Vikunja work, use the task's absolute numeric database ID as `task_id` and
+the audit filename prefix (for example `1382-description.md`). Never use the
+project-relative identifier such as `#17`.
+
 Pass `--workspace <path>` before the command when the workspace is not the
 current directory. Use `--input -` to read JSON from stdin. Treat exit code 0
 as success; all command results and errors are JSON. `status` may repair a
@@ -48,10 +52,20 @@ call the same durable service.
 
 Reviewer provider and model are never hard-coded. Resolution order is explicit
 CLI/MCP values, then `AGENT_REVIEW_REVIEWER_PROVIDER` plus
-`AGENT_REVIEW_REVIEWER_MODEL`, then `agent_review/config.json`. Credentials are
-read from the configured environment-variable name and must never be written
-to input JSON or audit logs. Provider and model must come together from one
-precedence source; do not mix values across sources.
+`AGENT_REVIEW_REVIEWER_MODEL`, then the global config. When
+`XDG_CONFIG_HOME` is absolute, use
+`$XDG_CONFIG_HOME/agent_review/config.json`; otherwise use
+`~/.config/agent_review/config.json`. Credentials are read from the configured
+environment-variable name and must never be written to input JSON or audit
+logs. Provider and model must come together from one precedence source; do not
+mix values across sources.
+
+Credential values may be placed in the sibling global `.env` file
+(`$XDG_CONFIG_HOME/agent_review/.env` when XDG is absolute, otherwise
+`~/.config/agent_review/.env`). Require mode `600` on POSIX. Real process
+environment variables override `.env`, and project `.env` files are ignored.
+Treat global `.env` as credential input only: provider/model/XDG settings in it
+are ignored for configuration selection, and variable interpolation is off.
 
 When acting as the reviewer, never write files or invoke CLI/MCP write
 operations. Return only the protocol-formatted Review Response to the worker.

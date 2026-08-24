@@ -2,7 +2,7 @@
 **Protocol:** review-protocol.md v1.3
 
 ## Review Request — Round 1
-**Task:** Vikunja #5 — add simple artifact and audit logging
+**Task:** Vikunja 1361 — add simple artifact and audit logging
 **Protocol:** review-protocol.md v1.3 — respond using the Review Response format.
 
 ### Proposed Solution

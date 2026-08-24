@@ -2,7 +2,7 @@
 **Protocol:** review-protocol.md v1.3
 
 ## Review Request — Round 1
-**Task:** Vikunja #4 — wrap lifecycle in a LangGraph workflow
+**Task:** Vikunja 1360 — wrap lifecycle in a LangGraph workflow
 **Protocol:** review-protocol.md v1.3 — respond using the Review Response format.
 
 ### Proposed Solution

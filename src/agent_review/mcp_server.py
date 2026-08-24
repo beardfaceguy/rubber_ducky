@@ -56,7 +56,6 @@ def _generate_review(
 ) -> ReviewState:
     workspace_path = Path(workspace).expanduser().resolve()
     config = load_reviewer_config(
-        workspace_path,
         provider=provider,
         model=model,
         api_key_env=api_key_env,

@@ -1,0 +1,7 @@
+{
+  "reviewer": {
+    "provider": "anthropic",
+    "model": "YOUR_MODEL_ID",
+    "api_key_env": "LLM_PROVIDER_KEY"
+  }
+}

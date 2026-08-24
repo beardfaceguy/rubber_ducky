@@ -27,25 +27,40 @@ agent-review --workspace /path/to/project resume THREAD EVENT --input summary.js
 
 Reviewer selection has no model default. Precedence is explicit CLI/MCP values,
 then `AGENT_REVIEW_REVIEWER_PROVIDER` and `AGENT_REVIEW_REVIEWER_MODEL`, then
-`agent_review/config.json`. Provider and model must be supplied together by the
-same precedence source; values are never mixed across sources.
+the global config. When `XDG_CONFIG_HOME` is an absolute path, the file is
+`$XDG_CONFIG_HOME/agent_review/config.json`; otherwise it is
+`~/.config/agent_review/config.json`. Provider and model must be supplied
+together by the same precedence source; values are never mixed across sources.
+
+Create it from the bundled example:
+
+```bash
+mkdir -p ~/.config/agent_review
+cp examples/config.json ~/.config/agent_review/config.json
+cp examples/.env.example ~/.config/agent_review/.env
+chmod 600 ~/.config/agent_review/.env
+```
+
+Then edit `provider`, `YOUR_MODEL_ID`, `api_key_env`, and the corresponding key
+value in `.env` before running a review.
 
 ```json
 {
   "reviewer": {
     "provider": "anthropic",
-    "model": "MODEL_NAME",
-    "api_key_env": "ANTHROPIC_API_KEY",
-    "options": {
-      "temperature": 0
-    }
+    "model": "YOUR_MODEL_ID",
+    "api_key_env": "LLM_PROVIDER_KEY"
   }
 }
 ```
 
 Install the selected integration with `uv sync --extra openai` or
-`uv sync --extra anthropic`. Credential values remain in environment variables;
-configuration and audit metadata contain only their names, provider, and model.
+`uv sync --extra anthropic`. The tool loads credentials from the global `.env`
+without modifying the process environment; real process variables override
+file values. Configuration and audit metadata contain only environment-variable
+names, provider, and model. The `.env` is credential input only:
+provider/model/XDG settings placed there do not participate in configuration
+selection, and variable interpolation is disabled.
 
 ## MCP
 

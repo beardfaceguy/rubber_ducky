@@ -70,7 +70,9 @@ def test_reviewer_returns_validated_structured_response_without_tools() -> None:
         position="AGREE",
         verdict="APPROVE",
     )
-    assert model.schemas == [ReviewResponse]
+    schema_properties = model.schemas[0].model_json_schema()["properties"]
+    assert "prior_point_responses" not in schema_properties
+    assert "resolved_concern_ids" not in schema_properties
     assert not model.bind_tools_called
     assert make_request().relevant_diff in str(model.inputs[0])
 
@@ -95,7 +97,7 @@ def test_reviewer_rejects_wrong_status_before_model_call() -> None:
     assert model.inputs == []
 
 
-def test_reviewer_dry_run_rejects_lifecycle_invalid_output() -> None:
+def test_round_one_reviewer_schema_rejects_wrong_round() -> None:
     state = start_review(make_request())
     model = FakeStructuredModel(
         {
@@ -105,10 +107,58 @@ def test_reviewer_dry_run_rejects_lifecycle_invalid_output() -> None:
         }
     )
 
-    with pytest.raises(InvalidTransition, match="expected review response round 1"):
+    with pytest.raises(ValidationError, match="Input should be 1"):
         ReviewerAdapter(model).review(state)
 
     assert state.responses == ()
+
+
+def test_followup_reviewer_uses_full_response_schema_and_dry_run() -> None:
+    blocker = Concern(id="B1", kind=ConcernKind.BLOCKING, text="Blocked.")
+    state = replay_review(
+        make_request(),
+        (
+            ReviewResponse(
+                round=1,
+                position="DISAGREE",
+                blocking_concerns=(blocker,),
+                verdict="REVISE",
+            ),
+            Rebuttal(
+                round=1,
+                position="DISAGREE",
+                blocking_responses=(
+                    BlockingConcernResponse(
+                        concern_id="B1",
+                        disposition=Disposition.DISPUTE,
+                        reason="The validation already exists.",
+                    ),
+                ),
+                revised_diff="Unchanged — see Review Request.",
+                requesting=RebuttalRequest.RE_REVIEW,
+            ),
+        ),
+    )
+    model = FakeStructuredModel(
+        {
+            "round": 3,
+            "position": "DISAGREE",
+            "verdict": "REVISE",
+        }
+    )
+
+    with pytest.raises(InvalidTransition, match="expected review response round 2"):
+        ReviewerAdapter(model).review(state)
+
+    assert model.schemas == [ReviewResponse]
+    assert state.responses == (
+        ReviewResponse(
+            round=1,
+            position="DISAGREE",
+            blocking_concerns=(blocker,),
+            verdict="REVISE",
+        ),
+    )
 
 
 def test_reviewer_revalidates_malformed_model_output() -> None:
