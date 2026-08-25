@@ -1,8 +1,56 @@
 # agent-review
 
-Deterministic orchestration for formal agent-to-agent code review. The
-application enforces protocol rounds, stable concern IDs, durable state,
-human-readable audit logs, and reviewer read-only boundaries.
+`agent-review` gives a coding agent a second AI reviewer and keeps their
+conversation organized. The reviewer examines the actual code or diff, while
+the calling agent remains responsible for deciding whether each concern is
+correct and for making any resulting changes. Review history is saved so a
+crash or restarted agent does not lose the discussion.
+
+## How a review works
+
+1. The calling agent sends the task and actual code or diff for review.
+2. The reviewer either approves it or identifies blocking concerns.
+3. For every blocker, the calling agent must analyze the concern and respond
+   with a reasoned `ACCEPT`, `DISPUTE`, or `CLARIFY`:
+   - `ACCEPT` includes the revised code or diff.
+   - `DISPUTE` explains why the concern does not apply, with evidence when
+     possible.
+   - `CLARIFY` explains what the reviewer misunderstood.
+4. The reviewer checks that response and any revised code. A concern is not
+   resolved merely because the calling agent accepted it; the reviewer must
+   verify the change.
+5. The exchange continues until the reviewer returns `APPROVE`, or until the
+   third and final review round. If blockers remain after round three, the
+   agents record their final positions and ask a human to choose the best
+   course of action.
+
+There are at most three reviewer responses and at most one calling-agent
+rebuttal after each response—not three sets of three rebuttals. The MCP server
+enforces the order and required response fields. The bundled agent skill tells
+the calling agent to evaluate concerns honestly rather than automatically
+agreeing with the reviewer.
+
+## Installation
+
+Clone the repository and install the CLI and MCP server as a `uv` tool:
+
+```bash
+git clone https://github.com/beardfaceguy/agent_review.git
+cd agent_review
+uv tool install --editable '.[anthropic,openai]'
+command -v agent-review-mcp
+```
+
+The final command prints the absolute executable path used in the MCP client
+configuration below. Install only the provider extras you need if you do not
+want both.
+
+Install the bundled calling-agent instructions:
+
+```bash
+mkdir -p ~/.agents/skills/agent-review
+cp -R skill/agent-review/. ~/.agents/skills/agent-review/
+```
 
 ## Development
 
@@ -62,29 +110,115 @@ names, provider, and model. The `.env` is credential input only:
 provider/model/XDG settings placed there do not participate in configuration
 selection, and variable interpolation is disabled.
 
+Reviewer output that fails protocol schema validation receives one corrective
+retry. A successful retry records its attempt count and redacted validation
+diagnostics in the durable audit; a second invalid response fails closed
+without persisting an event.
+
 ## MCP
 
-Run the stdio MCP server with:
+The server exposes `agent_review_start`, `agent_review_status`,
+`agent_review_generate`, `agent_review_respond`, `agent_review_rebut`, and
+`agent_review_resume`. It uses stdio; MCP clients start it automatically.
 
-```bash
-agent-review-mcp
-```
+Use the absolute path printed by `command -v agent-review-mcp`. The examples
+below use `/absolute/path/to/agent-review-mcp`. Merge each entry into an
+existing configuration rather than replacing unrelated servers.
 
-Example client configuration:
+### Cursor
+
+Add this to `~/.cursor/mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "agent-review": {
-      "command": "agent-review-mcp"
+      "command": "/absolute/path/to/agent-review-mcp",
+      "args": []
     }
   }
 }
 ```
 
-The server exposes `agent_review_start`, `agent_review_status`,
-`agent_review_generate`, `agent_review_respond`, `agent_review_rebut`, and
-`agent_review_resume`.
+### Claude Code
+
+Register it for all projects:
+
+```bash
+claude mcp add --scope user agent-review -- /absolute/path/to/agent-review-mcp
+claude mcp get agent-review
+```
+
+### Claude Desktop
+
+On Linux, add this to
+`~/.config/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "agent-review": {
+      "command": "/absolute/path/to/agent-review-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+### OpenAI Codex
+
+Register it with:
+
+```bash
+codex mcp add agent-review -- /absolute/path/to/agent-review-mcp
+codex mcp get agent-review
+```
+
+The corresponding `~/.codex/config.toml` entry is:
+
+```toml
+[mcp_servers.agent-review]
+command = "/absolute/path/to/agent-review-mcp"
+```
+
+### Zed
+
+Merge this into `~/.config/zed/settings.json`:
+
+```json
+{
+  "context_servers": {
+    "agent-review": {
+      "enabled": true,
+      "command": "/absolute/path/to/agent-review-mcp",
+      "args": [],
+      "timeout": 600
+    }
+  }
+}
+```
+
+### Daimonos
+
+Add this to the `mcpServers` object in
+`~/.config/daimonos/mcp_servers.json`:
+
+```json
+{
+  "mcpServers": {
+    "agent-review": {
+      "command": "/absolute/path/to/agent-review-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+Restart clients that were already running, then verify that the six
+`agent_review_*` tools are available. A quick end-to-end check should start a
+review in a disposable workspace, generate a reviewer response, and query its
+status.
+
 Tool failures use MCP `ToolError` with a stable `TypeName: message` string, such
 as `ReviewNotFound: 'missing'` or `InvalidTransition: ...`.
 

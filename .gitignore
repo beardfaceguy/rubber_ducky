@@ -3,4 +3,5 @@
 .pytest_cache/
 .repowise/
 __pycache__/
+agent_review/reviews.sqlite
 dist/

@@ -26,18 +26,18 @@ from agent_review.models import (
 
 class FakeStructuredModel:
     def __init__(self, response: object) -> None:
-        self.response = response
+        self.responses = list(response) if isinstance(response, list) else [response]
         self.schemas: list[type] = []
         self.inputs: list[object] = []
         self.bind_tools_called = False
 
-    def with_structured_output(self, schema: type) -> RunnableLambda:
+    def with_structured_output(self, schema: type, **_kwargs: Any) -> RunnableLambda:
         self.schemas.append(schema)
         return RunnableLambda(self._respond)
 
     def _respond(self, model_input: object) -> object:
         self.inputs.append(model_input)
-        return self.response
+        return self.responses.pop(0)
 
     def bind_tools(self, *_args: Any, **_kwargs: Any) -> None:
         self.bind_tools_called = True
@@ -77,6 +77,74 @@ def test_reviewer_returns_validated_structured_response_without_tools() -> None:
     assert make_request().relevant_diff in str(model.inputs[0])
 
 
+def test_reviewer_retries_one_invalid_structured_response_with_diagnostics() -> None:
+    model = FakeStructuredModel(
+        [
+            {
+                "round": 1,
+                "position": "AGREE",
+                "suggestions": [
+                    {
+                        "id": "api/app/tasks.py finding",
+                        "kind": "suggestion",
+                        "text": "Malformed model-owned ID.",
+                    }
+                ],
+                "verdict": "APPROVE",
+            },
+            {
+                "round": 1,
+                "position": "AGREE",
+                "suggestions": [
+                    {
+                        "id": "S1",
+                        "kind": "suggestion",
+                        "text": "Corrected model-owned ID.",
+                    }
+                ],
+                "verdict": "APPROVE",
+            },
+        ]
+    )
+
+    generated = ReviewerAdapter(model).review_with_diagnostics(
+        start_review(make_request())
+    )
+
+    assert generated.response.suggestions[0].id == "S1"
+    assert generated.attempts == 2
+    assert len(generated.validation_errors) == 1
+    assert "string_pattern_mismatch" in generated.validation_errors[0]
+    assert "api/app/tasks.py finding" not in generated.validation_errors[0]
+    assert len(model.inputs) == 2
+    assert "previous structured response failed validation" in str(
+        model.inputs[1]
+    ).lower()
+
+
+def test_reviewer_validation_retry_is_bounded_and_fails_closed() -> None:
+    invalid = {
+        "round": 1,
+        "position": "AGREE",
+        "suggestions": [
+            {
+                "id": "not-an-s-id",
+                "kind": "suggestion",
+                "text": "Malformed model-owned ID.",
+            }
+        ],
+        "verdict": "APPROVE",
+    }
+    model = FakeStructuredModel([invalid, invalid])
+    state = start_review(make_request())
+
+    with pytest.raises(ValidationError, match="string_pattern_mismatch"):
+        ReviewerAdapter(model).review(state)
+
+    assert len(model.inputs) == 2
+    assert state.responses == ()
+
+
 def test_reviewer_rejects_wrong_status_before_model_call() -> None:
     state = apply_review_response(
         start_review(make_request()),
@@ -108,7 +176,7 @@ def test_round_one_reviewer_schema_rejects_wrong_round() -> None:
     )
 
     with pytest.raises(ValidationError, match="Input should be 1"):
-        ReviewerAdapter(model).review(state)
+        ReviewerAdapter(model, max_validation_attempts=1).review(state)
 
     assert state.responses == ()
 
@@ -165,7 +233,9 @@ def test_reviewer_revalidates_malformed_model_output() -> None:
     model = FakeStructuredModel({"round": 1})
 
     with pytest.raises(ValidationError):
-        ReviewerAdapter(model).review(start_review(make_request()))
+        ReviewerAdapter(model, max_validation_attempts=1).review(
+            start_review(make_request())
+        )
 
 
 def test_reviewer_revalidates_preconstructed_model_instance() -> None:
@@ -177,7 +247,9 @@ def test_reviewer_revalidates_preconstructed_model_instance() -> None:
     model = FakeStructuredModel(invalid)
 
     with pytest.raises(ValidationError):
-        ReviewerAdapter(model).review(start_review(make_request()))
+        ReviewerAdapter(model, max_validation_attempts=1).review(
+            start_review(make_request())
+        )
 
 
 def test_worker_returns_validated_rebuttal_without_tools() -> None:

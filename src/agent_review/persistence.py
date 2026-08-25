@@ -29,7 +29,12 @@ _EVENT_MODELS = {
     "rebuttal": Rebuttal,
     "escalation_summary": EscalationSummary,
 }
-_ALLOWED_EVENT_METADATA = {"provider", "model"}
+_ALLOWED_EVENT_METADATA = {
+    "provider",
+    "model",
+    "validation_attempts",
+    "validation_errors",
+}
 
 
 class ReviewNotFound(KeyError):

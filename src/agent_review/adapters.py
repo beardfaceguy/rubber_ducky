@@ -5,7 +5,7 @@ from typing import Any, Literal, Protocol
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import Runnable
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from agent_review.lifecycle import (
     InvalidTransition,
@@ -46,6 +46,29 @@ class _RoundOneReviewResponse(ProtocolModel):
     verdict: Verdict
 
 
+@dataclass(frozen=True)
+class ReviewGeneration:
+    """Validated reviewer response plus bounded retry diagnostics."""
+
+    response: ReviewResponse
+    attempts: int
+    validation_errors: tuple[str, ...] = ()
+
+
+def _validation_diagnostic(error: ValidationError) -> str:
+    """Keep schema failure evidence without persisting model-provided values."""
+
+    entries = []
+    for item in error.errors(
+        include_url=False,
+        include_context=False,
+        include_input=False,
+    ):
+        location = ".".join(str(part) for part in item["loc"]) or "<root>"
+        entries.append(f"{location}: {item['type']}: {item['msg']}")
+    return "; ".join(entries)[:2000]
+
+
 def _participant_messages(
     role: str,
     state: ReviewState,
@@ -74,21 +97,53 @@ class ReviewerAdapter:
     """Generate validated reviewer responses without binding tools."""
 
     model: StructuredOutputModel
+    max_validation_attempts: int = 2
 
     def review(self, state: ReviewState) -> ReviewResponse:
+        return self.review_with_diagnostics(state).response
+
+    def review_with_diagnostics(self, state: ReviewState) -> ReviewGeneration:
         if state.status is not ReviewStatus.AWAITING_REVIEW_RESPONSE:
             raise InvalidTransition(
                 f"reviewer cannot act while status is {state.status.value}"
             )
+        if self.max_validation_attempts < 1:
+            raise ValueError("max_validation_attempts must be positive")
         response_schema: type[BaseModel] = (
             _RoundOneReviewResponse if not state.responses else ReviewResponse
         )
-        runnable = self.model.with_structured_output(response_schema)
-        raw_response = runnable.invoke(_participant_messages("reviewer", state))
-        structured_response = response_schema.model_validate(raw_response)
-        response = ReviewResponse.model_validate(structured_response.model_dump())
-        apply_event(state, response)
-        return response
+        diagnostics: list[str] = []
+        for attempt in range(1, self.max_validation_attempts + 1):
+            correction = ""
+            if diagnostics:
+                correction = (
+                    "\n\nThe previous structured response failed validation. "
+                    "Regenerate the entire response and correct every schema error. "
+                    "Reviewer concern IDs must use B1, B2, ... and suggestion IDs "
+                    "must use S1, S2, ... in monotonically increasing order. "
+                    f"Validation error:\n{diagnostics[-1]}"
+                )
+            runnable = self.model.with_structured_output(response_schema)
+            try:
+                raw_response = runnable.invoke(
+                    _participant_messages("reviewer", state, correction)
+                )
+                structured_response = response_schema.model_validate(raw_response)
+                response = ReviewResponse.model_validate(
+                    structured_response.model_dump()
+                )
+            except ValidationError as error:
+                diagnostics.append(_validation_diagnostic(error))
+                if attempt == self.max_validation_attempts:
+                    raise
+                continue
+            apply_event(state, response)
+            return ReviewGeneration(
+                response=response,
+                attempts=attempt,
+                validation_errors=tuple(diagnostics),
+            )
+        raise AssertionError("validation-attempt loop did not return or raise")
 
 
 @dataclass(frozen=True)

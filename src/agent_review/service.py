@@ -155,11 +155,15 @@ class ReviewService:
         only one result to become canonical.
         """
 
-        metadata = config.audit_metadata()
+        config_metadata = config.audit_metadata()
         history = self.store.load_history(thread_id)
         for stored in history.events:
             if stored.event_id == event_id:
-                if stored.metadata != metadata:
+                stored_config = {
+                    key: stored.metadata.get(key)
+                    for key in config_metadata
+                }
+                if stored_config != config_metadata:
                     raise PersistenceConflict(
                         f"event ID {event_id!r} was reused with different "
                         "reviewer configuration"
@@ -176,11 +180,19 @@ class ReviewService:
             config,
             environment=environment,
         )
-        response = ReviewerAdapter(model).review(state)
+        generated = ReviewerAdapter(model).review_with_diagnostics(state)
+        metadata = {
+            **config_metadata,
+            "validation_attempts": str(generated.attempts),
+        }
+        if generated.validation_errors:
+            metadata["validation_errors"] = "\n\n".join(
+                generated.validation_errors
+            )[:2000]
         return self.submit(
             thread_id,
             event_id,
-            response,
+            generated.response,
             metadata=metadata,
         )
 

@@ -40,6 +40,29 @@ class FakeReviewerModel:
         }
 
 
+class RetryingReviewerModel(FakeReviewerModel):
+    def _respond(self, _messages):
+        self.calls += 1
+        if self.calls == 1:
+            return {
+                "round": 1,
+                "position": "AGREE",
+                "suggestions": [
+                    {
+                        "id": "api/app/tasks.py finding",
+                        "kind": "suggestion",
+                        "text": "Malformed model-owned ID.",
+                    }
+                ],
+                "verdict": "APPROVE",
+            }
+        return {
+            "round": 1,
+            "position": "AGREE",
+            "verdict": "APPROVE",
+        }
+
+
 def test_service_starts_durable_review_and_audit(tmp_path: Path) -> None:
     service = ReviewService(tmp_path)
 
@@ -236,12 +259,51 @@ def test_service_generates_configured_reviewer_response_with_metadata(
     assert history.events[0].metadata == {
         "provider": "local",
         "model": "offline-reviewer",
+        "validation_attempts": "1",
     }
     log = (tmp_path / "agent_review" / "AR-7-application-service.md").read_text(
         encoding="utf-8"
     )
     assert 'reviewer.provider="local"' in log
     assert 'reviewer.model="offline-reviewer"' in log
+    assert 'reviewer.validation_attempts="1"' in log
+
+
+def test_service_persists_bounded_validation_retry_diagnostics(
+    tmp_path: Path,
+) -> None:
+    service = ReviewService(tmp_path)
+    service.start("review-1", "application-service", make_request())
+    config = ReviewerModelConfig(provider="local", model="offline-reviewer")
+    model = RetryingReviewerModel()
+    factory = ReviewerModelFactory(
+        {
+            "local": ProviderDefinition(
+                lambda _config, _credential: model,
+                requires_credential=False,
+            )
+        }
+    )
+
+    completed = service.generate_review(
+        "review-1",
+        "event-1",
+        config,
+        factory=factory,
+        environment={},
+    )
+
+    assert completed.status is ReviewStatus.APPROVED
+    assert model.calls == 2
+    metadata = service.store.load_history("review-1").events[0].metadata
+    assert metadata["validation_attempts"] == "2"
+    assert "string_pattern_mismatch" in metadata["validation_errors"]
+    assert len(metadata["validation_errors"]) <= 2000
+    log = (tmp_path / "agent_review" / "AR-7-application-service.md").read_text(
+        encoding="utf-8"
+    )
+    assert 'reviewer.validation_attempts="2"' in log
+    assert "string_pattern_mismatch" in log
 
 
 def test_generated_review_retry_does_not_call_model_twice(tmp_path: Path) -> None:
