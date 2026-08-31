@@ -24,12 +24,12 @@ def make_request() -> PlanReviewRequest:
     )
 
 
-def test_plan_review_starts_and_approves_through_durable_service(
+def test_rubber_ducky_plan_starts_and_approves_through_durable_service(
     tmp_path: Path,
 ) -> None:
     service = PlanReviewService(tmp_path)
 
-    started = service.start("plan-1", "add-plan-review", make_request())
+    started = service.start("plan-1", "add-rubber-ducky-plan", make_request())
     assert started.status is ReviewStatus.AWAITING_REVIEW_RESPONSE
 
     approval = ReviewResponse(

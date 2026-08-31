@@ -194,7 +194,7 @@ class AuditLog:
             raise ValueError("slug must be at most 80 characters")
 
         key = f"{safe_task_id}-{safe_slug}"
-        audit_root = workspace_root / "agent_review"
+        audit_root = workspace_root / "rubber_ducky"
         artifacts_dir = audit_root / key / "artifacts"
         log_path = audit_root / f"{key}.md"
 
@@ -240,7 +240,7 @@ class AuditLog:
             raise ValueError("slug must be at most 80 characters")
 
         key = f"{safe_task_id}-{safe_slug}"
-        audit_root = workspace_root / "agent_review"
+        audit_root = workspace_root / "rubber_ducky"
         log_path = audit_root / f"{key}.md"
         artifacts_dir = audit_root / key / "artifacts"
         if (

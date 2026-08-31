@@ -59,15 +59,15 @@ optional.
 
 ## Primary workflow
 
-When acting as the worker, use the `plan-review` CLI from the workspace root:
+When acting as the worker, use the `rubber-ducky-plan` CLI from the workspace root:
 
 ```text
-plan-review start <thread-id> <slug> --input <request.json>
-plan-review status <thread-id>
-plan-review review <thread-id> <event-id> [--provider P --model M]
-plan-review respond <thread-id> <event-id> --input <response.json>
-plan-review rebut <thread-id> <event-id> --input <rebuttal.json>
-plan-review resume <thread-id> <event-id> --input <summary.json>
+rubber-ducky-plan start <thread-id> <slug> --input <request.json>
+rubber-ducky-plan status <thread-id>
+rubber-ducky-plan review <thread-id> <event-id> [--provider P --model M]
+rubber-ducky-plan respond <thread-id> <event-id> --input <response.json>
+rubber-ducky-plan rebut <thread-id> <event-id> --input <rebuttal.json>
+rubber-ducky-plan resume <thread-id> <event-id> --input <summary.json>
 ```
 
 The `rebut` input carries a `revised_plan` field: a full plan document when any
@@ -91,24 +91,24 @@ Exit codes:
 - `5` — unexpected internal failure
 
 If the MCP server is configured, workers may use the equivalent
-`plan_review_start`, `plan_review_status`, `plan_review_generate`,
-`plan_review_respond`, `plan_review_rebut`, and `plan_review_resume` tools.
+`rubber_ducky_plan_start`, `rubber_ducky_plan_status`, `rubber_ducky_plan_generate`,
+`rubber_ducky_plan_respond`, `rubber_ducky_plan_rebut`, and `rubber_ducky_plan_resume` tools.
 Reuse the same thread and event IDs when switching between CLI and MCP; both
 call the same durable service.
 
 Reviewer provider and model are never hard-coded. Resolution order is explicit
-CLI/MCP values, then `AGENT_REVIEW_REVIEWER_PROVIDER` plus
-`AGENT_REVIEW_REVIEWER_MODEL`, then the global config. When
+CLI/MCP values, then `RUBBER_DUCKY_REVIEWER_PROVIDER` plus
+`RUBBER_DUCKY_REVIEWER_MODEL`, then the global config. When
 `XDG_CONFIG_HOME` is absolute, use
-`$XDG_CONFIG_HOME/agent_review/config.json`; otherwise use
-`~/.config/agent_review/config.json`. Credentials are read from the configured
+`$XDG_CONFIG_HOME/rubber_ducky/config.json`; otherwise use
+`~/.config/rubber_ducky/config.json`. Credentials are read from the configured
 environment-variable name and must never be written to input JSON or audit
 logs. Provider and model must come together from one precedence source; do not
 mix values across sources.
 
 Credential values may be placed in the sibling global `.env` file
-(`$XDG_CONFIG_HOME/agent_review/.env` when XDG is absolute, otherwise
-`~/.config/agent_review/.env`). Require mode `600` on POSIX. Real process
+(`$XDG_CONFIG_HOME/rubber_ducky/.env` when XDG is absolute, otherwise
+`~/.config/rubber_ducky/.env`). Require mode `600` on POSIX. Real process
 environment variables override `.env`, and project `.env` files are ignored.
 Treat global `.env` as credential input only: provider/model/XDG settings in it
 are ignored for configuration selection, and variable interpolation is off.
@@ -119,8 +119,8 @@ The worker records it with `respond`.
 
 ## Fallback
 
-If `plan-review` is unavailable, follow the Markdown protocol manually. The
-worker owns `agent_review/<task-id>-<short-slug>.md`, records every message
+If `rubber-ducky-plan` is unavailable, follow the Markdown protocol manually. The
+worker owns `rubber_ducky/<task-id>-<short-slug>.md`, records every message
 verbatim, enforces the three-round limit, and escalates unresolved deadlocks.
 
 Do not mix CLI and manual logging within the same review unless recovering from

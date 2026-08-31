@@ -14,7 +14,7 @@ from rubber_ducky.plan.models import (
 
 
 class PlanReviewService(ReviewService):
-    """Durable review service bound to the plan-review payload domain."""
+    """Durable review service bound to the plan review payload domain."""
 
     request_model: ClassVar[type[ReviewRequestBase]] = PlanReviewRequest
     rebuttal_model: ClassVar[type[RebuttalBase]] = PlanRebuttal

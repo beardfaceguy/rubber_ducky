@@ -1,6 +1,6 @@
 """Unified MCP server exposing both the code and plan review toolsets.
 
-Registers the ``agent_review_*`` (code) and ``plan_review_*`` (plan) tools on a
+Registers the ``rubber_ducky_code_*`` (code) and ``rubber_ducky_plan_*`` (plan) tools on a
 single server so one process serves both domains.
 """
 

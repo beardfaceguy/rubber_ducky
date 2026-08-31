@@ -31,7 +31,7 @@ def test_plan_domain_types_extend_the_trusted_allowlist() -> None:
     assert set(PLAN_CHECKPOINT_TYPES) <= trusted
 
 
-def test_plan_review_state_round_trips_through_the_plan_serializer() -> None:
+def test_rubber_ducky_plan_state_round_trips_through_the_plan_serializer() -> None:
     serializer = review_checkpoint_serializer(PLAN_CHECKPOINT_TYPES)
     original = start_review(_request(), state_cls=PlanReviewState)
 

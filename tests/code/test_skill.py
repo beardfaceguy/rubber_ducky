@@ -6,7 +6,7 @@ ROUTER_ROOT = Path(__file__).parents[2] / "skill" / "rubber_ducky"
 SHARED_PROTOCOL = (
     Path(__file__).parents[2] / "skill" / "references" / "review-protocol.md"
 )
-REVIEW_LOG_ROOT = Path(__file__).parents[2] / "agent_review"
+REVIEW_LOG_ROOT = Path(__file__).parents[2] / "rubber_ducky"
 
 
 def test_router_skill_delegates_to_both_domains() -> None:
@@ -15,25 +15,25 @@ def test_router_skill_delegates_to_both_domains() -> None:
     assert "name: rubber_ducky" in router
     assert "rubber_ducky_code" in router
     assert "rubber_ducky_plan" in router
-    assert "agent-review" in router
-    assert "plan-review" in router
+    assert "rubber-ducky-code" in router
+    assert "rubber-ducky-plan" in router
 
 
 def test_skill_documents_cli_and_manual_fallback() -> None:
     skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
 
     for command in ("start", "status", "review", "respond", "rebut", "resume"):
-        assert f"agent-review {command}" in skill
+        assert f"rubber-ducky-code {command}" in skill
     for exit_code in ("`0`", "`2`", "`3`", "`4`", "`5`"):
         assert exit_code in skill
     for tool in ("start", "status", "generate", "respond", "rebut", "resume"):
-        assert f"`agent_review_{tool}`" in skill
-    assert "~/.config/agent_review/config.json" in skill
-    assert "$XDG_CONFIG_HOME/agent_review/config.json" in skill
-    assert "~/.config/agent_review/.env" in skill
+        assert f"`rubber_ducky_code_{tool}`" in skill
+    assert "~/.config/rubber_ducky/config.json" in skill
+    assert "$XDG_CONFIG_HOME/rubber_ducky/config.json" in skill
+    assert "~/.config/rubber_ducky/.env" in skill
     assert "project `.env` files are ignored" in skill
     assert "variable interpolation is off" in skill
-    assert "If `agent-review` is unavailable" in skill
+    assert "If `rubber-ducky-code` is unavailable" in skill
     assert "never write files or invoke CLI/MCP write" in skill
 
 

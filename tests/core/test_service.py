@@ -70,7 +70,7 @@ def test_service_starts_durable_review_and_audit(tmp_path: Path) -> None:
     state = service.start("review-1", "application-service", make_request())
 
     assert state.status is ReviewStatus.AWAITING_REVIEW_RESPONSE
-    log = (tmp_path / "agent_review" / "AR-7-application-service.md").read_text(
+    log = (tmp_path / "rubber_ducky" / "AR-7-application-service.md").read_text(
         encoding="utf-8"
     )
     assert '<!-- event id="request" artifact ' in log
@@ -83,7 +83,7 @@ def test_service_start_is_idempotent(tmp_path: Path) -> None:
     second = service.start("review-1", "application-service", make_request())
 
     assert second == first
-    log = (tmp_path / "agent_review" / "AR-7-application-service.md").read_text(
+    log = (tmp_path / "rubber_ducky" / "AR-7-application-service.md").read_text(
         encoding="utf-8"
     )
     assert log.count("## Review Request — Round 1") == 1
@@ -103,7 +103,7 @@ def test_service_journals_audits_and_resumes_event(tmp_path: Path) -> None:
 
     assert completed.status is ReviewStatus.APPROVED
     assert reopened == completed
-    log = (tmp_path / "agent_review" / "AR-7-application-service.md").read_text(
+    log = (tmp_path / "rubber_ducky" / "AR-7-application-service.md").read_text(
         encoding="utf-8"
     )
     assert '<!-- event id="event-1" -->' in log
@@ -127,7 +127,7 @@ def test_service_retry_recovers_crash_after_journal_commit(tmp_path: Path) -> No
     )
 
     assert recovered.status is ReviewStatus.APPROVED
-    log = (tmp_path / "agent_review" / "AR-7-application-service.md").read_text(
+    log = (tmp_path / "rubber_ducky" / "AR-7-application-service.md").read_text(
         encoding="utf-8"
     )
     assert log.count('event id="event-1"') == 1
@@ -147,7 +147,7 @@ def test_service_retry_skips_event_already_applied_to_graph(tmp_path: Path) -> N
     recovered = service.submit("review-1", "event-1", approval)
 
     assert recovered.status is ReviewStatus.APPROVED
-    log = (tmp_path / "agent_review" / "AR-7-application-service.md").read_text(
+    log = (tmp_path / "rubber_ducky" / "AR-7-application-service.md").read_text(
         encoding="utf-8"
     )
     assert log.count('event id="event-1"') == 1
@@ -166,7 +166,7 @@ def test_reviewed_marker_text_cannot_suppress_audit_event(tmp_path: Path) -> Non
         ReviewResponse(round=1, position="AGREE", verdict="APPROVE"),
     )
 
-    log = (tmp_path / "agent_review" / "AR-7-application-service.md").read_text(
+    log = (tmp_path / "rubber_ducky" / "AR-7-application-service.md").read_text(
         encoding="utf-8"
     )
     assert "## Review Response — Round 1" in log
@@ -262,7 +262,7 @@ def test_service_generates_configured_reviewer_response_with_metadata(
         "model": "offline-reviewer",
         "validation_attempts": "1",
     }
-    log = (tmp_path / "agent_review" / "AR-7-application-service.md").read_text(
+    log = (tmp_path / "rubber_ducky" / "AR-7-application-service.md").read_text(
         encoding="utf-8"
     )
     assert 'reviewer.provider="local"' in log
@@ -300,7 +300,7 @@ def test_service_persists_bounded_validation_retry_diagnostics(
     assert metadata["validation_attempts"] == "2"
     assert "string_pattern_mismatch" in metadata["validation_errors"]
     assert len(metadata["validation_errors"]) <= 2000
-    log = (tmp_path / "agent_review" / "AR-7-application-service.md").read_text(
+    log = (tmp_path / "rubber_ducky" / "AR-7-application-service.md").read_text(
         encoding="utf-8"
     )
     assert 'reviewer.validation_attempts="2"' in log
@@ -388,7 +388,7 @@ def test_generated_review_retry_backfills_failed_audit(
 
     assert recovered.status is ReviewStatus.APPROVED
     assert model.calls == 1
-    log = (tmp_path / "agent_review" / "AR-7-application-service.md").read_text(
+    log = (tmp_path / "rubber_ducky" / "AR-7-application-service.md").read_text(
         encoding="utf-8"
     )
     assert "## Review Response — Round 1" in log
@@ -426,7 +426,7 @@ def test_generated_review_never_persists_runtime_credential(tmp_path: Path) -> N
     assert credential not in (
         service.database_path.read_bytes().decode(errors="ignore")
     )
-    log = (tmp_path / "agent_review" / "AR-7-application-service.md").read_text(
+    log = (tmp_path / "rubber_ducky" / "AR-7-application-service.md").read_text(
         encoding="utf-8"
     )
     assert credential not in log

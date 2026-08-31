@@ -111,5 +111,5 @@ def build_review_graph(
         checkpointer = in_memory_review_checkpointer(additional_types)
     return workflow.compile(
         checkpointer=checkpointer,
-        name="agent-review",
+        name="rubber-ducky-code",
     )

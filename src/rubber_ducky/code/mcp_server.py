@@ -169,25 +169,25 @@ def register_tools(target: MCPServer) -> None:
     """Register the six code-review tools onto ``target``."""
 
     target.tool(
-        name="agent_review_start",
+        name="rubber_ducky_code_start",
         description="Start or idempotently recover a durable code review.",
         annotations=_IDEMPOTENT_WRITE,
         structured_output=True,
     )(start_review)
     target.tool(
-        name="agent_review_status",
+        name="rubber_ducky_code_status",
         description="Load canonical review status and repair a lagging checkpoint.",
         annotations=_IDEMPOTENT_WRITE,
         structured_output=True,
     )(review_status)
     target.tool(
-        name="agent_review_respond",
+        name="rubber_ducky_code_respond",
         description="Journal and apply a reviewer response.",
         annotations=_IDEMPOTENT_WRITE,
         structured_output=True,
     )(submit_review_response)
     target.tool(
-        name="agent_review_generate",
+        name="rubber_ducky_code_generate",
         description=(
             "Generate and apply a reviewer response with configured provider/model."
         ),
@@ -195,13 +195,13 @@ def register_tools(target: MCPServer) -> None:
         structured_output=True,
     )(generate_review_response)
     target.tool(
-        name="agent_review_rebut",
+        name="rubber_ducky_code_rebut",
         description="Journal and apply a worker rebuttal.",
         annotations=_IDEMPOTENT_WRITE,
         structured_output=True,
     )(submit_rebuttal)
     target.tool(
-        name="agent_review_resume",
+        name="rubber_ducky_code_resume",
         description="Journal an escalation summary and complete human escalation.",
         annotations=_IDEMPOTENT_WRITE,
         structured_output=True,
@@ -209,7 +209,7 @@ def register_tools(target: MCPServer) -> None:
 
 
 server = MCPServer(
-    name="agent-review",
+    name="rubber-ducky-code",
     description="Durable, protocol-validated agent-to-agent code review",
 )
 register_tools(server)

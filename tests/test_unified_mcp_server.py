@@ -30,24 +30,24 @@ def test_unified_server_exposes_both_toolsets() -> None:
     tool_names = {tool.name for tool in tools}
 
     assert tool_names == {
-        "agent_review_start",
-        "agent_review_status",
-        "agent_review_respond",
-        "agent_review_generate",
-        "agent_review_rebut",
-        "agent_review_resume",
-        "plan_review_start",
-        "plan_review_status",
-        "plan_review_respond",
-        "plan_review_generate",
-        "plan_review_rebut",
-        "plan_review_resume",
+        "rubber_ducky_code_start",
+        "rubber_ducky_code_status",
+        "rubber_ducky_code_respond",
+        "rubber_ducky_code_generate",
+        "rubber_ducky_code_rebut",
+        "rubber_ducky_code_resume",
+        "rubber_ducky_plan_start",
+        "rubber_ducky_plan_status",
+        "rubber_ducky_plan_respond",
+        "rubber_ducky_plan_generate",
+        "rubber_ducky_plan_rebut",
+        "rubber_ducky_plan_resume",
     }
 
 
 def test_unified_server_runs_a_code_and_a_plan_review(tmp_path: Path) -> None:
     code = call_tool(
-        "agent_review_start",
+        "rubber_ducky_code_start",
         {
             "workspace": str(tmp_path / "code"),
             "thread_id": "review-1",
@@ -56,7 +56,7 @@ def test_unified_server_runs_a_code_and_a_plan_review(tmp_path: Path) -> None:
         },
     )
     plan = call_tool(
-        "plan_review_start",
+        "rubber_ducky_plan_start",
         {
             "workspace": str(tmp_path / "plan"),
             "thread_id": "plan-1",

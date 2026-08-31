@@ -33,7 +33,7 @@ def test_plan_cli_start_then_status(
             str(tmp_path),
             "start",
             "plan-1",
-            "add-plan-review",
+            "add-rubber-ducky-plan",
             "--input",
             request_path,
         ]

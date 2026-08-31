@@ -1,4 +1,4 @@
-"""Concrete plan-review payload models and their durable state binding."""
+"""Concrete plan review payload models and their durable state binding."""
 
 from typing import Annotated
 
@@ -53,7 +53,7 @@ def _render_plan(plan: PlanDocument) -> str:
 
 
 class PlanReviewRequest(ReviewRequestBase):
-    """The initial plan-review request carrying the proposed plan."""
+    """The initial plan review request carrying the proposed plan."""
 
     plan: PlanDocument
 
@@ -68,7 +68,7 @@ class PlanReviewRequest(ReviewRequestBase):
 
 
 class PlanRebuttal(RebuttalBase):
-    """A plan-review worker response carrying an optional revised plan."""
+    """A plan review worker response carrying an optional revised plan."""
 
     revised_plan: PlanDocument | None = None
 
@@ -94,7 +94,7 @@ class PlanRebuttal(RebuttalBase):
 
 
 class PlanReviewState(ReviewState):
-    """Durable review state bound to the plan-review payload types."""
+    """Durable review state bound to the plan review payload types."""
 
     request_model = PlanReviewRequest
     rebuttal_model = PlanRebuttal

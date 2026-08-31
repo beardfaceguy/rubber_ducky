@@ -18,7 +18,7 @@ from rubber_ducky.core.reviewer_config import (
 
 
 def test_reviewer_config_precedence_is_explicit_env_then_file(tmp_path: Path) -> None:
-    config_dir = tmp_path / "agent_review"
+    config_dir = tmp_path / "rubber_ducky"
     config_dir.mkdir()
     config_file = config_dir / "config.json"
     config_file.write_text(
@@ -33,8 +33,8 @@ def test_reviewer_config_precedence_is_explicit_env_then_file(tmp_path: Path) ->
         encoding="utf-8",
     )
     environment = {
-        "AGENT_REVIEW_REVIEWER_PROVIDER": "anthropic",
-        "AGENT_REVIEW_REVIEWER_MODEL": "env-model",
+        "RUBBER_DUCKY_REVIEWER_PROVIDER": "anthropic",
+        "RUBBER_DUCKY_REVIEWER_MODEL": "env-model",
     }
 
     from_file = load_reviewer_config(config_path=config_file, environment={})
@@ -92,7 +92,7 @@ def test_reviewer_config_never_contains_environment_secret(tmp_path: Path) -> No
 
 
 def test_global_reviewer_config_rejects_unknown_fields(tmp_path: Path) -> None:
-    config_dir = tmp_path / "agent_review"
+    config_dir = tmp_path / "rubber_ducky"
     config_dir.mkdir()
     config_file = config_dir / "config.json"
     config_file.write_text(
@@ -113,7 +113,7 @@ def test_global_reviewer_config_rejects_unknown_fields(tmp_path: Path) -> None:
 
 
 def test_provider_and_model_must_come_from_same_source(tmp_path: Path) -> None:
-    config_dir = tmp_path / "agent_review"
+    config_dir = tmp_path / "rubber_ducky"
     config_dir.mkdir()
     config_file = config_dir / "config.json"
     config_file.write_text(
@@ -124,7 +124,7 @@ def test_provider_and_model_must_come_from_same_source(tmp_path: Path) -> None:
     with pytest.raises(ReviewerConfigurationError, match="together"):
         load_reviewer_config(
             config_path=config_file,
-            environment={"AGENT_REVIEW_REVIEWER_PROVIDER": "anthropic"},
+            environment={"RUBBER_DUCKY_REVIEWER_PROVIDER": "anthropic"},
         )
 
 
@@ -142,13 +142,13 @@ def test_global_config_path_honors_xdg_then_home(tmp_path: Path) -> None:
         home_directory=tmp_path / "home",
     )
 
-    assert xdg == tmp_path / "xdg" / "agent_review" / "config.json"
-    assert default == tmp_path / "home" / ".config" / "agent_review" / "config.json"
+    assert xdg == tmp_path / "xdg" / "rubber_ducky" / "config.json"
+    assert default == tmp_path / "home" / ".config" / "rubber_ducky" / "config.json"
     assert relative_xdg == default
 
 
 def test_loader_reads_xdg_global_config_without_workspace(tmp_path: Path) -> None:
-    config_file = tmp_path / "xdg" / "agent_review" / "config.json"
+    config_file = tmp_path / "xdg" / "rubber_ducky" / "config.json"
     config_file.parent.mkdir(parents=True)
     config_file.write_text(
         json.dumps(
@@ -194,7 +194,7 @@ def test_explicit_config_does_not_read_malformed_global_file(tmp_path: Path) -> 
 
 
 def test_global_dotenv_loads_credentials_with_process_override(tmp_path: Path) -> None:
-    config_path = tmp_path / "agent_review" / "config.json"
+    config_path = tmp_path / "rubber_ducky" / "config.json"
     config_path.parent.mkdir()
     dotenv_path = config_path.parent / ".env"
     dotenv_path.write_text(
@@ -219,7 +219,7 @@ def test_global_dotenv_loads_credentials_with_process_override(tmp_path: Path) -
 
 
 def test_global_dotenv_rejects_group_or_other_permissions(tmp_path: Path) -> None:
-    config_path = tmp_path / "agent_review" / "config.json"
+    config_path = tmp_path / "rubber_ducky" / "config.json"
     config_path.parent.mkdir()
     dotenv_path = config_path.parent / ".env"
     dotenv_path.write_text("LLM_PROVIDER_KEY=secret\n", encoding="utf-8")
@@ -230,7 +230,7 @@ def test_global_dotenv_rejects_group_or_other_permissions(tmp_path: Path) -> Non
 
 
 def test_dotenv_cannot_supply_provider_or_model_selection(tmp_path: Path) -> None:
-    config_path = tmp_path / "agent_review" / "config.json"
+    config_path = tmp_path / "rubber_ducky" / "config.json"
     config_path.parent.mkdir()
     config_path.write_text(
         json.dumps(
@@ -245,8 +245,8 @@ def test_dotenv_cannot_supply_provider_or_model_selection(tmp_path: Path) -> Non
     )
     dotenv_path = config_path.parent / ".env"
     dotenv_path.write_text(
-        "AGENT_REVIEW_REVIEWER_PROVIDER=anthropic\n"
-        "AGENT_REVIEW_REVIEWER_MODEL=dotenv-model\n",
+        "RUBBER_DUCKY_REVIEWER_PROVIDER=anthropic\n"
+        "RUBBER_DUCKY_REVIEWER_MODEL=dotenv-model\n",
         encoding="utf-8",
     )
     dotenv_path.chmod(0o600)
@@ -258,7 +258,7 @@ def test_dotenv_cannot_supply_provider_or_model_selection(tmp_path: Path) -> Non
 
 
 def test_dotenv_interpolation_is_disabled(tmp_path: Path) -> None:
-    config_path = tmp_path / "agent_review" / "config.json"
+    config_path = tmp_path / "rubber_ducky" / "config.json"
     config_path.parent.mkdir()
     dotenv_path = config_path.parent / ".env"
     dotenv_path.write_text("LLM_PROVIDER_KEY=${SOURCE_KEY}\n", encoding="utf-8")

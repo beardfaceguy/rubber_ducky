@@ -17,7 +17,7 @@ below is identical across domains.
 - v1.3 — Defined exact round counting, terminal message values, and ID
   allocation, and required reviewer verification before consensus. Generalized
   the reviewed artifact so code and plan domains share one protocol.
-- v1.2 — Log location is now workspace-relative (`agent_review/` at workspace
+- v1.2 — Log location is now workspace-relative (`rubber_ducky/` at workspace
   root, created if missing) instead of a fixed absolute path.
 - v1.1 — Added Role Determination and Missing Information sections.
 - v1.0 — Initial version.
@@ -69,7 +69,7 @@ The worker owns the log file. The reviewer never writes files.
 
 ## Log File
 
-- Location: `agent_review/` at the root of the current workspace (the
+- Location: `rubber_ducky/` at the root of the current workspace (the
   repository or project directory the worker is operating in). If the
   directory does not exist, the worker creates it before writing the first
   log entry.

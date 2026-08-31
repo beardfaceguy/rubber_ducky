@@ -8,10 +8,10 @@ crash or restarted agent does not lose the discussion.
 
 It reviews two kinds of artifact through one shared protocol:
 
-- **Code review** — the reviewed artifact is a real diff. CLI `agent-review`,
-  MCP tools `agent_review_*`, skill `rubber_ducky_code`.
+- **Code review** — the reviewed artifact is a real diff. CLI `rubber-ducky-code`,
+  MCP tools `rubber_ducky_code_*`, skill `rubber_ducky_code`.
 - **Plan review** — the reviewed artifact is a structured plan document. CLI
-  `plan-review`, MCP tools `plan_review_*`, skill `rubber_ducky_plan`.
+  `rubber-ducky-plan`, MCP tools `rubber_ducky_plan_*`, skill `rubber_ducky_plan`.
 
 The `rubber_ducky` router skill picks the domain from the supplied artifact.
 Both domains share the same rounds, verdicts, escalation, durable audit log,
@@ -47,15 +47,15 @@ agreeing with the reviewer.
 Clone the repository and install the CLI and MCP server as a `uv` tool:
 
 ```bash
-git clone https://github.com/beardfaceguy/agent_review.git
-cd agent_review
+git clone https://github.com/beardfaceguy/rubber_ducky.git
+cd rubber_ducky
 uv tool install --editable '.[anthropic,openai,openrouter]'
 command -v rubber-ducky-mcp
 ```
 
-This installs five executables: the `agent-review` and `plan-review` CLIs, and
-three MCP servers — `rubber-ducky-mcp` (both toolsets), `agent-review-mcp`
-(code only), and `plan-review-mcp` (plan only). The final command prints the
+This installs five executables: the `rubber-ducky-code` and `rubber-ducky-plan` CLIs, and
+three MCP servers — `rubber-ducky-mcp` (both toolsets), `rubber-ducky-code-mcp`
+(code only), and `rubber-ducky-plan-mcp` (plan only). The final command prints the
 absolute path used in the MCP client configuration below. Install only the
 provider extras you need.
 
@@ -77,23 +77,23 @@ so keep the `references/` directory alongside them.
 ```bash
 uv sync
 uv run pytest
-uv run agent-review --help
+uv run rubber-ducky-code --help
 ```
 
 ## CLI
 
 Both CLIs accept Pydantic-compatible JSON from a file or stdin and share the
-same subcommands and exit codes. `agent-review` reviews a diff; `plan-review`
-reviews a plan document. Substitute `plan-review` for `agent-review` below to
+same subcommands and exit codes. `rubber-ducky-code` reviews a diff; `rubber-ducky-plan`
+reviews a plan document. Substitute `rubber-ducky-plan` for `rubber-ducky-code` below to
 run a plan review.
 
 ```bash
-agent-review --workspace /path/to/project start THREAD SLUG --input request.json
-agent-review --workspace /path/to/project status THREAD
-agent-review --workspace /path/to/project review THREAD EVENT --provider openai --model MODEL
-agent-review --workspace /path/to/project respond THREAD EVENT --input response.json
-agent-review --workspace /path/to/project rebut THREAD EVENT --input rebuttal.json
-agent-review --workspace /path/to/project resume THREAD EVENT --input summary.json
+rubber-ducky-code --workspace /path/to/project start THREAD SLUG --input request.json
+rubber-ducky-code --workspace /path/to/project status THREAD
+rubber-ducky-code --workspace /path/to/project review THREAD EVENT --provider openai --model MODEL
+rubber-ducky-code --workspace /path/to/project respond THREAD EVENT --input response.json
+rubber-ducky-code --workspace /path/to/project rebut THREAD EVENT --input rebuttal.json
+rubber-ducky-code --workspace /path/to/project resume THREAD EVENT --input summary.json
 ```
 
 For a code review the `start` request carries a `relevant_diff` string. For a
@@ -112,23 +112,23 @@ plan review it carries a structured `plan` instead:
 }
 ```
 
-A `plan-review rebut` input carries `revised_plan` (a full plan document, or
+A `rubber-ducky-plan rebut` input carries `revised_plan` (a full plan document, or
 `null` when nothing changed) in place of the code domain's `revised_diff`.
 
 Reviewer selection has no model default. Precedence is explicit CLI/MCP values,
-then `AGENT_REVIEW_REVIEWER_PROVIDER` and `AGENT_REVIEW_REVIEWER_MODEL`, then
+then `RUBBER_DUCKY_REVIEWER_PROVIDER` and `RUBBER_DUCKY_REVIEWER_MODEL`, then
 the global config. When `XDG_CONFIG_HOME` is an absolute path, the file is
-`$XDG_CONFIG_HOME/agent_review/config.json`; otherwise it is
-`~/.config/agent_review/config.json`. Provider and model must be supplied
+`$XDG_CONFIG_HOME/rubber_ducky/config.json`; otherwise it is
+`~/.config/rubber_ducky/config.json`. Provider and model must be supplied
 together by the same precedence source; values are never mixed across sources.
 
 Create it from the bundled example:
 
 ```bash
-mkdir -p ~/.config/agent_review
-cp examples/config.json ~/.config/agent_review/config.json
-cp examples/.env.example ~/.config/agent_review/.env
-chmod 600 ~/.config/agent_review/.env
+mkdir -p ~/.config/rubber_ducky
+cp examples/config.json ~/.config/rubber_ducky/config.json
+cp examples/.env.example ~/.config/rubber_ducky/.env
+chmod 600 ~/.config/rubber_ducky/.env
 ```
 
 Then edit `provider`, `YOUR_MODEL_ID`, `api_key_env`, and the corresponding key
@@ -187,12 +187,12 @@ without persisting an event.
 ## MCP
 
 The unified server `rubber-ducky-mcp` exposes both toolsets on one process: the
-code tools `agent_review_start`, `agent_review_status`, `agent_review_generate`,
-`agent_review_respond`, `agent_review_rebut`, `agent_review_resume`, and the
-plan tools `plan_review_start`, `plan_review_status`, `plan_review_generate`,
-`plan_review_respond`, `plan_review_rebut`, `plan_review_resume`. It uses stdio;
-MCP clients start it automatically. The standalone `agent-review-mcp` and
-`plan-review-mcp` servers expose only their own toolset if you prefer to
+code tools `rubber_ducky_code_start`, `rubber_ducky_code_status`, `rubber_ducky_code_generate`,
+`rubber_ducky_code_respond`, `rubber_ducky_code_rebut`, `rubber_ducky_code_resume`, and the
+plan tools `rubber_ducky_plan_start`, `rubber_ducky_plan_status`, `rubber_ducky_plan_generate`,
+`rubber_ducky_plan_respond`, `rubber_ducky_plan_rebut`, `rubber_ducky_plan_resume`. It uses stdio;
+MCP clients start it automatically. The standalone `rubber-ducky-code-mcp` and
+`rubber-ducky-plan-mcp` servers expose only their own toolset if you prefer to
 register a single domain.
 
 Use the absolute path printed by `command -v rubber-ducky-mcp`. The examples
@@ -289,7 +289,7 @@ Add this to the `mcpServers` object in
 ```
 
 Restart clients that were already running, then verify that the twelve
-`agent_review_*` and `plan_review_*` tools are available. A quick end-to-end
+`rubber_ducky_code_*` and `rubber_ducky_plan_*` tools are available. A quick end-to-end
 check should start a review in a disposable workspace, generate a reviewer
 response, and query its status.
 

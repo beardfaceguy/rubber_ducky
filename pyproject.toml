@@ -18,10 +18,10 @@ dependencies = [
 ]
 
 [project.scripts]
-agent-review = "rubber_ducky.code.cli:run"
-agent-review-mcp = "rubber_ducky.code.mcp_server:run"
-plan-review = "rubber_ducky.plan.cli:run"
-plan-review-mcp = "rubber_ducky.plan.mcp_server:run"
+rubber-ducky-code = "rubber_ducky.code.cli:run"
+rubber-ducky-code-mcp = "rubber_ducky.code.mcp_server:run"
+rubber-ducky-plan = "rubber_ducky.plan.cli:run"
+rubber-ducky-plan-mcp = "rubber_ducky.plan.mcp_server:run"
 rubber-ducky-mcp = "rubber_ducky.mcp_server:run"
 
 [project.optional-dependencies]

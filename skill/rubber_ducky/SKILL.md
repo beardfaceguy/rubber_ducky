@@ -36,14 +36,14 @@ Read the chosen skill's `SKILL.md` and follow it. The two domains share:
 - the same protocol semantics (roles, IDs `B*`/`S*`/`R*`, verdicts APPROVE /
   REVISE / ESCALATE, the three-round limit, and escalation to the human);
 - the same reviewer configuration and credential precedence
-  (`~/.config/agent_review/`);
-- the same durable audit log under `agent_review/` at the workspace root.
+  (`~/.config/rubber_ducky/`);
+- the same durable audit log under `rubber_ducky/` at the workspace root.
 
 They differ only in the tool surface:
 
-- `rubber_ducky_code` → the `agent-review` CLI and `agent_review_*` MCP tools;
+- `rubber_ducky_code` → the `rubber-ducky-code` CLI and `rubber_ducky_code_*` MCP tools;
   payload is a diff.
-- `rubber_ducky_plan` → the `plan-review` CLI and `plan_review_*` MCP tools;
+- `rubber_ducky_plan` → the `rubber-ducky-plan` CLI and `rubber_ducky_plan_*` MCP tools;
   payload is a plan document.
 
 Do not mix the two tool surfaces within a single review conversation.

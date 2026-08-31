@@ -13,23 +13,25 @@ def test_mcp_tools_expose_validated_service_contracts(tmp_path: Path) -> None:
     tool_names = {tool.name for tool in tools}
 
     assert tool_names == {
-        "agent_review_start",
-        "agent_review_status",
-        "agent_review_respond",
-        "agent_review_generate",
-        "agent_review_rebut",
-        "agent_review_resume",
+        "rubber_ducky_code_start",
+        "rubber_ducky_code_status",
+        "rubber_ducky_code_respond",
+        "rubber_ducky_code_generate",
+        "rubber_ducky_code_rebut",
+        "rubber_ducky_code_resume",
     }
     assert all(tool.annotations.idempotent_hint is True for tool in tools)
     assert all(tool.annotations.read_only_hint is False for tool in tools)
-    start_tool = next(tool for tool in tools if tool.name == "agent_review_start")
-    generate_tool = next(tool for tool in tools if tool.name == "agent_review_generate")
+    start_tool = next(tool for tool in tools if tool.name == "rubber_ducky_code_start")
+    generate_tool = next(
+        tool for tool in tools if tool.name == "rubber_ducky_code_generate"
+    )
     assert "request" in start_tool.input_schema["properties"]
     assert generate_tool.annotations.open_world_hint is True
 
     started = asyncio.run(
         server.call_tool(
-            "agent_review_start",
+            "rubber_ducky_code_start",
             {
                 "workspace": str(tmp_path),
                 "thread_id": "review-1",
@@ -55,7 +57,7 @@ def test_mcp_generate_uses_explicit_reviewer_configuration(
 ) -> None:
     workspace = str(tmp_path)
     call_tool(
-        "agent_review_start",
+        "rubber_ducky_code_start",
         {
             "workspace": workspace,
             "thread_id": "review-1",
@@ -88,7 +90,7 @@ def test_mcp_generate_uses_explicit_reviewer_configuration(
     monkeypatch.setattr(ReviewService, "generate_review", fake_generate)
 
     generated = call_tool(
-        "agent_review_generate",
+        "rubber_ducky_code_generate",
         {
             "workspace": workspace,
             "thread_id": "review-1",
@@ -113,7 +115,7 @@ def call_tool(name: str, arguments: dict):
 def test_mcp_response_rebuttal_and_status_tools(tmp_path: Path) -> None:
     workspace = str(tmp_path)
     call_tool(
-        "agent_review_start",
+        "rubber_ducky_code_start",
         {
             "workspace": workspace,
             "thread_id": "review-1",
@@ -127,7 +129,7 @@ def test_mcp_response_rebuttal_and_status_tools(tmp_path: Path) -> None:
         },
     )
     revision = call_tool(
-        "agent_review_respond",
+        "rubber_ducky_code_respond",
         {
             "workspace": workspace,
             "thread_id": "review-1",
@@ -147,7 +149,7 @@ def test_mcp_response_rebuttal_and_status_tools(tmp_path: Path) -> None:
         },
     )
     rebuttal = call_tool(
-        "agent_review_rebut",
+        "rubber_ducky_code_rebut",
         {
             "workspace": workspace,
             "thread_id": "review-1",
@@ -168,7 +170,7 @@ def test_mcp_response_rebuttal_and_status_tools(tmp_path: Path) -> None:
         },
     )
     status = call_tool(
-        "agent_review_status",
+        "rubber_ducky_code_status",
         {
             "workspace": workspace,
             "thread_id": "review-1",
@@ -183,7 +185,7 @@ def test_mcp_response_rebuttal_and_status_tools(tmp_path: Path) -> None:
 def test_mcp_resume_and_error_results(tmp_path: Path) -> None:
     workspace = str(tmp_path)
     call_tool(
-        "agent_review_start",
+        "rubber_ducky_code_start",
         {
             "workspace": workspace,
             "thread_id": "review-1",
@@ -197,7 +199,7 @@ def test_mcp_resume_and_error_results(tmp_path: Path) -> None:
         },
     )
     call_tool(
-        "agent_review_respond",
+        "rubber_ducky_code_respond",
         {
             "workspace": workspace,
             "thread_id": "review-1",
@@ -217,7 +219,7 @@ def test_mcp_resume_and_error_results(tmp_path: Path) -> None:
         },
     )
     resumed = call_tool(
-        "agent_review_resume",
+        "rubber_ducky_code_resume",
         {
             "workspace": workspace,
             "thread_id": "review-1",
@@ -238,7 +240,7 @@ def test_mcp_resume_and_error_results(tmp_path: Path) -> None:
     assert resumed.structured_content["state"]["status"] == "escalated"
     with pytest.raises(ToolError, match="ReviewNotFound"):
         call_tool(
-            "agent_review_status",
+            "rubber_ducky_code_status",
             {
                 "workspace": workspace,
                 "thread_id": "missing",
@@ -246,7 +248,7 @@ def test_mcp_resume_and_error_results(tmp_path: Path) -> None:
         )
     with pytest.raises(ToolError, match="InvalidTransition"):
         call_tool(
-            "agent_review_respond",
+            "rubber_ducky_code_respond",
             {
                 "workspace": workspace,
                 "thread_id": "review-1",

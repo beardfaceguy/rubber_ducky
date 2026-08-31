@@ -198,7 +198,7 @@ def reviewer_config_path(
         config_home = xdg_path
     else:
         config_home = (home_directory or Path.home()) / ".config"
-    return config_home / "agent_review" / "config.json"
+    return config_home / "rubber_ducky" / "config.json"
 
 
 def reviewer_environment(
@@ -284,8 +284,8 @@ def load_reviewer_config(
     env = os.environ if environment is None else environment
     explicit_pair = (provider, model)
     environment_pair = (
-        env.get("AGENT_REVIEW_REVIEWER_PROVIDER"),
-        env.get("AGENT_REVIEW_REVIEWER_MODEL"),
+        env.get("RUBBER_DUCKY_REVIEWER_PROVIDER"),
+        env.get("RUBBER_DUCKY_REVIEWER_MODEL"),
     )
     if any(explicit_pair):
         resolved_provider, resolved_model = explicit_pair
@@ -312,7 +312,7 @@ def load_reviewer_config(
     provider_definition = _BUILTIN_PROVIDERS.get(normalized_provider)
     resolved_api_key_env = (
         api_key_env
-        or env.get("AGENT_REVIEW_REVIEWER_API_KEY_ENV")
+        or env.get("RUBBER_DUCKY_REVIEWER_API_KEY_ENV")
         or file_values.get("api_key_env")
         or (
             provider_definition.default_api_key_env

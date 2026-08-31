@@ -38,11 +38,11 @@ class ReviewService:
     checkpoint_types: ClassVar[tuple[type, ...]] = ()
 
     def __post_init__(self) -> None:
-        (self.workspace_root / "agent_review").mkdir(parents=True, exist_ok=True)
+        (self.workspace_root / "rubber_ducky").mkdir(parents=True, exist_ok=True)
 
     @property
     def database_path(self) -> Path:
-        return self.workspace_root / "agent_review" / "reviews.sqlite"
+        return self.workspace_root / "rubber_ducky" / "reviews.sqlite"
 
     @cached_property
     def store(self) -> SqliteReviewStore:

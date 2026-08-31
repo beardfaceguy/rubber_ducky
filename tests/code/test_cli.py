@@ -121,7 +121,7 @@ def test_cli_respond_is_idempotent_and_audited(
     assert first_code == duplicate_code == 0
     assert first == duplicate
     assert first["state"]["status"] == "approved"
-    log = (tmp_path / "agent_review" / "AR-7-cli.md").read_text(encoding="utf-8")
+    log = (tmp_path / "rubber_ducky" / "AR-7-cli.md").read_text(encoding="utf-8")
     assert log.count('event id="event-1"') == 1
 
 

@@ -8,16 +8,16 @@ def test_plan_skill_documents_cli_mcp_and_plan_shape() -> None:
 
     assert "name: rubber_ducky_plan" in skill
     for command in ("start", "status", "review", "respond", "rebut", "resume"):
-        assert f"plan-review {command}" in skill
+        assert f"rubber-ducky-plan {command}" in skill
     for exit_code in ("`0`", "`2`", "`3`", "`4`", "`5`"):
         assert exit_code in skill
     for tool in ("start", "status", "generate", "respond", "rebut", "resume"):
-        assert f"`plan_review_{tool}`" in skill
+        assert f"`rubber_ducky_plan_{tool}`" in skill
     for field in ("objective", "steps", "acceptance_criteria"):
         assert field in skill
-    assert "~/.config/agent_review/config.json" in skill
+    assert "~/.config/rubber_ducky/config.json" in skill
     assert "project `.env` files are ignored" in skill
-    assert "If `plan-review` is unavailable" in skill
+    assert "If `rubber-ducky-plan` is unavailable" in skill
     assert "never write files or invoke CLI/MCP write" in skill
 
 

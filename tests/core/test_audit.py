@@ -29,9 +29,9 @@ def test_review_path_rejects_traversal(tmp_path: Path) -> None:
 def test_create_uses_protocol_compatible_layout(tmp_path: Path) -> None:
     audit = AuditLog.create(tmp_path, task_id="AR-3", slug="audit-logging")
 
-    assert audit.log_path == tmp_path / "agent_review" / "AR-3-audit-logging.md"
+    assert audit.log_path == tmp_path / "rubber_ducky" / "AR-3-audit-logging.md"
     assert audit.artifacts_dir == (
-        tmp_path / "agent_review" / "AR-3-audit-logging" / "artifacts"
+        tmp_path / "rubber_ducky" / "AR-3-audit-logging" / "artifacts"
     )
     assert audit.log_path.read_text(encoding="utf-8") == (
         "# Agent Review Log\n**Protocol:** review-protocol.md v1.3\n"
@@ -57,7 +57,7 @@ def test_create_never_overwrites_existing_log(tmp_path: Path) -> None:
 
 
 def test_create_collision_leaves_no_new_artifact_directory(tmp_path: Path) -> None:
-    audit_root = tmp_path / "agent_review"
+    audit_root = tmp_path / "rubber_ducky"
     audit_root.mkdir()
     (audit_root / "AR-3-audit-logging.md").write_text(
         "existing audit",

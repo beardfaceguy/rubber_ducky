@@ -27,18 +27,18 @@ def test_plan_mcp_tools_expose_validated_service_contracts(tmp_path: Path) -> No
     tool_names = {tool.name for tool in tools}
 
     assert tool_names == {
-        "plan_review_start",
-        "plan_review_status",
-        "plan_review_respond",
-        "plan_review_generate",
-        "plan_review_rebut",
-        "plan_review_resume",
+        "rubber_ducky_plan_start",
+        "rubber_ducky_plan_status",
+        "rubber_ducky_plan_respond",
+        "rubber_ducky_plan_generate",
+        "rubber_ducky_plan_rebut",
+        "rubber_ducky_plan_resume",
     }
-    start_tool = next(tool for tool in tools if tool.name == "plan_review_start")
+    start_tool = next(tool for tool in tools if tool.name == "rubber_ducky_plan_start")
     assert "request" in start_tool.input_schema["properties"]
 
     started = call_tool(
-        "plan_review_start",
+        "rubber_ducky_plan_start",
         {
             "workspace": str(tmp_path),
             "thread_id": "plan-1",
@@ -59,6 +59,6 @@ def test_plan_mcp_tools_expose_validated_service_contracts(tmp_path: Path) -> No
 def test_plan_mcp_status_reports_missing_thread(tmp_path: Path) -> None:
     with pytest.raises(ToolError, match="ReviewNotFound"):
         call_tool(
-            "plan_review_status",
+            "rubber_ducky_plan_status",
             {"workspace": str(tmp_path), "thread_id": "missing"},
         )

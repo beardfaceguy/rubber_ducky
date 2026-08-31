@@ -1,4 +1,4 @@
-"""MCP transport facade for the durable plan-review application service.
+"""MCP transport facade for the durable plan review application service.
 
 The tool functions are registered onto a server via ``register_tools`` so the
 same set can be mounted on a standalone plan server or the unified
@@ -21,7 +21,7 @@ from rubber_ducky.plan.service import PlanReviewService
 
 
 class ReviewToolResult(BaseModel):
-    """Structured MCP result shared by all plan-review tools."""
+    """Structured MCP result shared by all plan review tools."""
 
     thread_id: str
     state: ReviewState
@@ -166,28 +166,28 @@ def resume_escalation(
 
 
 def register_tools(target: MCPServer) -> None:
-    """Register the six plan-review tools onto ``target``."""
+    """Register the six plan review tools onto ``target``."""
 
     target.tool(
-        name="plan_review_start",
+        name="rubber_ducky_plan_start",
         description="Start or idempotently recover a durable plan review.",
         annotations=_IDEMPOTENT_WRITE,
         structured_output=True,
     )(start_review)
     target.tool(
-        name="plan_review_status",
-        description="Load canonical plan-review status and repair a lagging checkpoint.",
+        name="rubber_ducky_plan_status",
+        description="Load canonical plan review status and repair a lagging checkpoint.",
         annotations=_IDEMPOTENT_WRITE,
         structured_output=True,
     )(review_status)
     target.tool(
-        name="plan_review_respond",
+        name="rubber_ducky_plan_respond",
         description="Journal and apply a reviewer response.",
         annotations=_IDEMPOTENT_WRITE,
         structured_output=True,
     )(submit_review_response)
     target.tool(
-        name="plan_review_generate",
+        name="rubber_ducky_plan_generate",
         description=(
             "Generate and apply a reviewer response with configured provider/model."
         ),
@@ -195,13 +195,13 @@ def register_tools(target: MCPServer) -> None:
         structured_output=True,
     )(generate_review_response)
     target.tool(
-        name="plan_review_rebut",
+        name="rubber_ducky_plan_rebut",
         description="Journal and apply a worker rebuttal.",
         annotations=_IDEMPOTENT_WRITE,
         structured_output=True,
     )(submit_rebuttal)
     target.tool(
-        name="plan_review_resume",
+        name="rubber_ducky_plan_resume",
         description="Journal an escalation summary and complete human escalation.",
         annotations=_IDEMPOTENT_WRITE,
         structured_output=True,
@@ -209,7 +209,7 @@ def register_tools(target: MCPServer) -> None:
 
 
 server = MCPServer(
-    name="plan-review",
+    name="rubber-ducky-plan",
     description="Durable, protocol-validated agent-to-agent plan review",
 )
 register_tools(server)

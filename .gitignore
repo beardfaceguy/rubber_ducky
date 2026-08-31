@@ -3,5 +3,5 @@
 .pytest_cache/
 .repowise/
 __pycache__/
-agent_review/reviews.sqlite
+rubber_ducky/reviews.sqlite
 dist/
