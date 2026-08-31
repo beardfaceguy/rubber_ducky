@@ -13,12 +13,11 @@ from hmac import compare_digest
 from html import escape
 from pathlib import Path
 
-from agent_review.models import (
-    UNCHANGED_DIFF,
+from rubber_ducky.core.models import (
     Concern,
     EscalationSummary,
-    Rebuttal,
-    ReviewRequest,
+    RebuttalBase,
+    ReviewRequestBase,
     ReviewResponse,
 )
 
@@ -60,7 +59,7 @@ def _numbered(items: tuple[str, ...], empty: str) -> str:
     return "\n".join(f"{number}. {item}" for number, item in enumerate(items, start=1))
 
 
-def _render_request(request: ReviewRequest) -> str:
+def _render_request(request: ReviewRequestBase) -> str:
     return (
         "## Review Request — Round 1\n"
         f"**Task:** {request.task_id} — {request.title}\n"
@@ -69,8 +68,8 @@ def _render_request(request: ReviewRequest) -> str:
         "### Proposed Solution\n"
         f"{request.proposed_solution}\n"
         "\n"
-        "### Relevant Code / Diff\n"
-        f"{request.relevant_diff}\n"
+        f"### {request.payload_heading()}\n"
+        f"{request.payload_text()}\n"
         "\n"
         "### Known Concerns\n"
         f"{_numbered(request.known_concerns, 'None.')}\n"
@@ -113,7 +112,7 @@ def _render_response(response: ReviewResponse) -> str:
     )
 
 
-def _render_rebuttal(rebuttal: Rebuttal) -> str:
+def _render_rebuttal(rebuttal: RebuttalBase) -> str:
     blocking_responses = "\n".join(
         f"Re {response.concern_id}: {response.disposition.value} — {response.reason}"
         for response in rebuttal.blocking_responses
@@ -130,8 +129,8 @@ def _render_rebuttal(rebuttal: Rebuttal) -> str:
         "### Responses to Blocking Concerns\n"
         f"{blocking_responses}\n"
         "\n"
-        "### Revised Code / Diff\n"
-        f"{rebuttal.revised_diff}\n"
+        f"### {rebuttal.revised_heading()}\n"
+        f"{rebuttal.revised_text()}\n"
         "\n"
         "### New Points\n"
         f"{new_points}\n"
@@ -270,7 +269,7 @@ class AuditLog:
 
     def append(
         self,
-        event: ReviewRequest | ReviewResponse | Rebuttal | EscalationSummary,
+        event: ReviewRequestBase | ReviewResponse | RebuttalBase | EscalationSummary,
         *,
         event_id: str | None = None,
         audit_metadata: Mapping[str, str] | None = None,
@@ -301,11 +300,13 @@ class AuditLog:
             self._append_text(f"\n{metadata}{_render_escalation(event)}")
             return None
 
-        if isinstance(event, Rebuttal):
-            artifact_name = f"round-{event.round}-rebuttal.diff"
-            artifact_text = event.revised_diff
+        if isinstance(event, RebuttalBase):
+            artifact_name = (
+                f"round-{event.round}-rebuttal.{event.revised_artifact_suffix()}"
+            )
+            artifact_text = event.revised_text()
             rendered_event = _render_rebuttal(event)
-            if artifact_text == UNCHANGED_DIFF:
+            if event.is_unchanged():
                 metadata = self._metadata(
                     safe_event_id,
                     audit_metadata=audit_metadata,
@@ -318,8 +319,8 @@ class AuditLog:
                     f"request task {event.task_id!r} does not match audit task "
                     f"{self.task_id!r}"
                 )
-            artifact_name = "round-1-review-request.diff"
-            artifact_text = event.relevant_diff
+            artifact_name = f"round-1-review-request.{event.artifact_suffix()}"
+            artifact_text = event.payload_text()
             rendered_event = _render_request(event)
 
         artifact_path = self.artifacts_dir / artifact_name

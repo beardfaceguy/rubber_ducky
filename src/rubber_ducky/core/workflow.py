@@ -1,5 +1,6 @@
 """LangGraph orchestration around the deterministic review reducer."""
 
+from collections.abc import Callable, Iterable
 from typing import Literal, TypedDict
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -7,8 +8,8 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import interrupt
 
-from agent_review.checkpointing import in_memory_review_checkpointer
-from agent_review.lifecycle import (
+from rubber_ducky.core.checkpointing import in_memory_review_checkpointer
+from rubber_ducky.core.lifecycle import (
     InvalidTransition,
     ReviewState,
     ReviewStatus,
@@ -16,13 +17,13 @@ from agent_review.lifecycle import (
     expected_event_type,
     start_review,
 )
-from agent_review.models import ReviewRequest
+from rubber_ducky.core.models import ReviewRequestBase
 
 
 class ReviewWorkflowState(TypedDict, total=False):
     """Checkpointed graph state for one review conversation."""
 
-    request: ReviewRequest
+    request: ReviewRequestBase
     review: ReviewState
 
 
@@ -33,8 +34,13 @@ _TERMINAL_STATUSES = {
 }
 
 
-def _initialize(state: ReviewWorkflowState) -> ReviewWorkflowState:
-    return {"review": start_review(state["request"])}
+def _make_initialize(
+    state_cls: type[ReviewState],
+) -> "Callable[[ReviewWorkflowState], ReviewWorkflowState]":
+    def _initialize(state: ReviewWorkflowState) -> ReviewWorkflowState:
+        return {"review": start_review(state["request"], state_cls=state_cls)}
+
+    return _initialize
 
 
 def _wait_for_event(state: ReviewWorkflowState) -> ReviewWorkflowState:
@@ -77,11 +83,19 @@ def _route_after_event(state: ReviewWorkflowState) -> Literal["wait", "end"]:
 
 def build_review_graph(
     checkpointer: BaseCheckpointSaver | None = None,
+    *,
+    state_cls: type[ReviewState] = ReviewState,
+    additional_types: Iterable[type] = (),
 ) -> CompiledStateGraph:
-    """Compile the review workflow with an in-memory saver by default."""
+    """Compile the review workflow with an in-memory saver by default.
+
+    ``state_cls`` binds the domain's ``ReviewState`` subclass, and
+    ``additional_types`` extends the default in-memory checkpoint allowlist
+    with that domain's concrete payload types.
+    """
 
     workflow = StateGraph(ReviewWorkflowState)
-    workflow.add_node("initialize", _initialize)
+    workflow.add_node("initialize", _make_initialize(state_cls))
     workflow.add_node("wait_for_event", _wait_for_event)
     workflow.add_edge(START, "initialize")
     workflow.add_edge("initialize", "wait_for_event")
@@ -94,7 +108,7 @@ def build_review_graph(
         },
     )
     if checkpointer is None:
-        checkpointer = in_memory_review_checkpointer()
+        checkpointer = in_memory_review_checkpointer(additional_types)
     return workflow.compile(
         checkpointer=checkpointer,
         name="agent-review",

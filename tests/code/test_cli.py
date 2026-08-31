@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from agent_review.cli import main
-from agent_review.service import ReviewService
+from rubber_ducky.code.cli import main
+from rubber_ducky.core.service import ReviewService
 
 
 def write_json(path: Path, payload: dict[str, object]) -> None:

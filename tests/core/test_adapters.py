@@ -4,22 +4,21 @@ import pytest
 from langchain_core.runnables import RunnableLambda
 from pydantic import ValidationError
 
-from agent_review.adapters import ReviewerAdapter, WorkerAdapter
-from agent_review.lifecycle import (
+from rubber_ducky.core.adapters import ReviewerAdapter, WorkerAdapter
+from rubber_ducky.core.lifecycle import (
     InvalidTransition,
     apply_review_response,
     replay_review,
     start_review,
 )
-from agent_review.models import (
+from rubber_ducky.code.models import Rebuttal, ReviewRequest
+from rubber_ducky.core.models import (
     BlockingConcernResponse,
     Concern,
     ConcernKind,
     Disposition,
     EscalationSummary,
-    Rebuttal,
     RebuttalRequest,
-    ReviewRequest,
     ReviewResponse,
 )
 
@@ -117,9 +116,9 @@ def test_reviewer_retries_one_invalid_structured_response_with_diagnostics() -> 
     assert "string_pattern_mismatch" in generated.validation_errors[0]
     assert "api/app/tasks.py finding" not in generated.validation_errors[0]
     assert len(model.inputs) == 2
-    assert "previous structured response failed validation" in str(
-        model.inputs[1]
-    ).lower()
+    assert (
+        "previous structured response failed validation" in str(model.inputs[1]).lower()
+    )
 
 
 def test_reviewer_validation_retry_is_bounded_and_fails_closed() -> None:
@@ -280,7 +279,7 @@ def test_worker_returns_validated_rebuttal_without_tools() -> None:
         }
     )
 
-    rebuttal = WorkerAdapter(model).respond(state)
+    rebuttal = WorkerAdapter(model, rebuttal_schema=Rebuttal).respond(state)
 
     assert isinstance(rebuttal, Rebuttal)
     assert model.schemas == [Rebuttal]
@@ -316,7 +315,7 @@ def test_worker_cannot_invent_diff_for_accepted_concern() -> None:
     )
 
     with pytest.raises(InvalidTransition, match="caller-supplied revised diff"):
-        WorkerAdapter(model).respond(state)
+        WorkerAdapter(model, rebuttal_schema=Rebuttal).respond(state)
 
 
 def test_worker_cannot_invent_diff_while_disputing_concern() -> None:
@@ -348,7 +347,7 @@ def test_worker_cannot_invent_diff_while_disputing_concern() -> None:
     )
 
     with pytest.raises(InvalidTransition, match="cannot invent revised code"):
-        WorkerAdapter(model).respond(state)
+        WorkerAdapter(model, rebuttal_schema=Rebuttal).respond(state)
 
 
 def test_worker_accepts_only_exact_caller_supplied_diff() -> None:
@@ -380,7 +379,9 @@ def test_worker_accepts_only_exact_caller_supplied_diff() -> None:
         }
     )
 
-    rebuttal = WorkerAdapter(model).respond(state, revised_diff=revised_diff)
+    rebuttal = WorkerAdapter(model, rebuttal_schema=Rebuttal).respond(
+        state, revised_diff=revised_diff
+    )
 
     assert isinstance(rebuttal, Rebuttal)
     assert rebuttal.revised_diff == revised_diff
@@ -416,7 +417,9 @@ def test_worker_rejects_model_alteration_of_supplied_diff() -> None:
     )
 
     with pytest.raises(InvalidTransition, match="does not match"):
-        WorkerAdapter(model).respond(state, revised_diff="+authoritative = True")
+        WorkerAdapter(model, rebuttal_schema=Rebuttal).respond(
+            state, revised_diff="+authoritative = True"
+        )
 
 
 def test_worker_selects_escalation_summary_for_escalation_status() -> None:
@@ -445,7 +448,7 @@ def test_worker_selects_escalation_summary_for_escalation_status() -> None:
         }
     )
 
-    summary = WorkerAdapter(model).respond(state)
+    summary = WorkerAdapter(model, rebuttal_schema=Rebuttal).respond(state)
 
     assert isinstance(summary, EscalationSummary)
     assert model.schemas == [EscalationSummary]
@@ -466,7 +469,9 @@ def test_worker_rejects_revised_diff_for_escalation_summary() -> None:
     model = FakeStructuredModel({})
 
     with pytest.raises(InvalidTransition, match="does not accept a revised diff"):
-        WorkerAdapter(model).respond(state, revised_diff="+irrelevant = True")
+        WorkerAdapter(model, rebuttal_schema=Rebuttal).respond(
+            state, revised_diff="+irrelevant = True"
+        )
 
     assert model.inputs == []
 
@@ -536,7 +541,7 @@ def test_worker_selects_rebuttal_for_final_position_status() -> None:
         }
     )
 
-    final_position = WorkerAdapter(model).respond(state)
+    final_position = WorkerAdapter(model, rebuttal_schema=Rebuttal).respond(state)
 
     assert isinstance(final_position, Rebuttal)
     assert model.schemas == [Rebuttal]
@@ -546,6 +551,8 @@ def test_worker_rejects_wrong_status_before_model_call() -> None:
     model = FakeStructuredModel({})
 
     with pytest.raises(InvalidTransition, match="worker cannot act"):
-        WorkerAdapter(model).respond(start_review(make_request()))
+        WorkerAdapter(model, rebuttal_schema=Rebuttal).respond(
+            start_review(make_request())
+        )
 
     assert model.inputs == []

@@ -20,7 +20,7 @@ from pydantic import (
     field_validator,
 )
 
-from agent_review.adapters import StructuredOutputModel
+from rubber_ducky.core.adapters import StructuredOutputModel
 
 NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 DEFAULT_PROVIDER_KEY_ENV = "LLM_PROVIDER_KEY"

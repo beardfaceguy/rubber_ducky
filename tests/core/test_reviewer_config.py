@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-import agent_review.reviewer_config as config_module
-from agent_review.reviewer_config import (
+import rubber_ducky.core.reviewer_config as config_module
+from rubber_ducky.core.reviewer_config import (
     ProviderDefinition,
     ReviewerConfigurationError,
     ReviewerModelConfig,

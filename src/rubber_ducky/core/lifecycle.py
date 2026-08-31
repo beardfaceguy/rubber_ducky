@@ -2,15 +2,16 @@
 
 from collections.abc import Iterable
 from enum import StrEnum
+from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny, field_validator
 
-from agent_review.models import (
+from rubber_ducky.core.models import (
     Concern,
     EscalationSummary,
-    Rebuttal,
+    RebuttalBase,
     RebuttalRequest,
-    ReviewRequest,
+    ReviewRequestBase,
     ReviewResponse,
     Verdict,
 )
@@ -41,24 +42,51 @@ def expected_event_type(status: ReviewStatus) -> str | None:
 
 
 class ReviewState(BaseModel):
-    """Immutable aggregate state for one review conversation."""
+    """Immutable aggregate state for one review conversation.
+
+    The ``request_model``/``rebuttal_model`` class vars bind the concrete
+    domain payload types. They exist so that when a checkpoint reloads this
+    state (its nested models flattened to plain dicts), the polymorphic
+    ``request``/``rebuttals`` fields reconstruct as the concrete domain type
+    rather than the abstract base. Domain packages subclass to rebind them.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    request_model: ClassVar[type[ReviewRequestBase]] = ReviewRequestBase
+    rebuttal_model: ClassVar[type[RebuttalBase]] = RebuttalBase
+
     status: ReviewStatus
-    request: ReviewRequest
+    request: SerializeAsAny[ReviewRequestBase]
     responses: tuple[ReviewResponse, ...] = Field(default_factory=tuple)
-    rebuttals: tuple[Rebuttal, ...] = Field(default_factory=tuple)
+    rebuttals: tuple[SerializeAsAny[RebuttalBase], ...] = Field(default_factory=tuple)
     open_blocking_concerns: tuple[Concern, ...] = Field(default_factory=tuple)
     suggestions: tuple[Concern, ...] = Field(default_factory=tuple)
     escalation_summary: EscalationSummary | None = None
+
+    @field_validator("request", mode="before")
+    @classmethod
+    def _coerce_request(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            return cls.request_model.model_validate(value)
+        return value
+
+    @field_validator("rebuttals", mode="before")
+    @classmethod
+    def _coerce_rebuttals(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        return tuple(
+            cls.rebuttal_model.model_validate(item) if isinstance(item, dict) else item
+            for item in value
+        )
 
 
 class InvalidTransition(ValueError):
     """Raised when a message cannot follow the current review state."""
 
 
-ReviewEvent = ReviewResponse | Rebuttal | EscalationSummary
+ReviewEvent = ReviewResponse | RebuttalBase | EscalationSummary
 
 
 def _validate_new_concern_ids(
@@ -90,10 +118,18 @@ def _validate_new_concern_ids(
             )
 
 
-def start_review(request: ReviewRequest) -> ReviewState:
-    """Start a conversation waiting for its first reviewer response."""
+def start_review(
+    request: ReviewRequestBase,
+    *,
+    state_cls: type[ReviewState] = ReviewState,
+) -> ReviewState:
+    """Start a conversation waiting for its first reviewer response.
 
-    return ReviewState(
+    ``state_cls`` selects the domain's ``ReviewState`` subclass so that its
+    concrete-payload class-var seam governs later checkpoint reconstruction.
+    """
+
+    return state_cls(
         status=ReviewStatus.AWAITING_REVIEW_RESPONSE,
         request=request,
     )
@@ -176,7 +212,7 @@ def apply_review_response(
     )
 
 
-def apply_rebuttal(state: ReviewState, rebuttal: Rebuttal) -> ReviewState:
+def apply_rebuttal(state: ReviewState, rebuttal: RebuttalBase) -> ReviewState:
     """Apply a worker rebuttal to all currently open blocking concerns."""
 
     allowed_statuses = {
@@ -282,7 +318,7 @@ def apply_event(state: ReviewState, event: ReviewEvent) -> ReviewState:
 
     if isinstance(event, ReviewResponse):
         return apply_review_response(state, event)
-    if isinstance(event, Rebuttal):
+    if isinstance(event, RebuttalBase):
         return apply_rebuttal(state, event)
     if isinstance(event, EscalationSummary):
         return finalize_escalation(state, event)
@@ -290,12 +326,14 @@ def apply_event(state: ReviewState, event: ReviewEvent) -> ReviewState:
 
 
 def replay_review(
-    request: ReviewRequest,
+    request: ReviewRequestBase,
     events: Iterable[ReviewEvent],
+    *,
+    state_cls: type[ReviewState] = ReviewState,
 ) -> ReviewState:
     """Rebuild canonical state by replaying validated protocol messages."""
 
-    state = start_review(request)
+    state = start_review(request, state_cls=state_cls)
     for index, event in enumerate(events, start=1):
         try:
             state = apply_event(state, event)

@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from agent_review.mcp_server import server
-from agent_review.service import ReviewService
+from rubber_ducky.code.mcp_server import server
+from rubber_ducky.core.service import ReviewService
 
 
 def test_mcp_tools_expose_validated_service_contracts(tmp_path: Path) -> None:

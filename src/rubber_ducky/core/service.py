@@ -4,28 +4,38 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
+from typing import ClassVar
 
 from langgraph.types import Command
 
-from agent_review.adapters import ReviewerAdapter
-from agent_review.audit import ArtifactConflict, AuditIdentityConflict, AuditLog
-from agent_review.lifecycle import ReviewEvent, ReviewState, replay_review
-from agent_review.models import ReviewRequest
-from agent_review.persistence import (
+from rubber_ducky.core.adapters import ReviewerAdapter
+from rubber_ducky.core.audit import ArtifactConflict, AuditIdentityConflict, AuditLog
+from rubber_ducky.core.lifecycle import ReviewEvent, ReviewState, replay_review
+from rubber_ducky.core.models import RebuttalBase, ReviewRequestBase
+from rubber_ducky.core.persistence import (
     PersistenceConflict,
     SqliteReviewStore,
     StoredReview,
     sqlite_review_checkpointer,
 )
-from agent_review.reviewer_config import ReviewerModelConfig, ReviewerModelFactory
-from agent_review.workflow import build_review_graph
+from rubber_ducky.core.reviewer_config import ReviewerModelConfig, ReviewerModelFactory
+from rubber_ducky.core.workflow import build_review_graph
 
 
 @dataclass(frozen=True)
 class ReviewService:
-    """Coordinate durable review side effects in recoverable order."""
+    """Coordinate durable review side effects in recoverable order.
+
+    ``request_model`` and ``rebuttal_model`` bind the domain the service
+    persists; subclasses override them to serve a different review domain.
+    """
 
     workspace_root: Path
+
+    request_model: ClassVar[type[ReviewRequestBase]] = ReviewRequestBase
+    rebuttal_model: ClassVar[type[RebuttalBase]] = RebuttalBase
+    state_model: ClassVar[type[ReviewState]] = ReviewState
+    checkpoint_types: ClassVar[tuple[type, ...]] = ()
 
     def __post_init__(self) -> None:
         (self.workspace_root / "agent_review").mkdir(parents=True, exist_ok=True)
@@ -36,13 +46,18 @@ class ReviewService:
 
     @cached_property
     def store(self) -> SqliteReviewStore:
-        return SqliteReviewStore(self.database_path)
+        return SqliteReviewStore(
+            self.database_path,
+            request_model=self.request_model,
+            rebuttal_model=self.rebuttal_model,
+            state_model=self.state_model,
+        )
 
     def start(
         self,
         thread_id: str,
         slug: str,
-        request: ReviewRequest,
+        request: ReviewRequestBase,
     ) -> ReviewState:
         """Start or recover a review and its human-readable audit."""
 
@@ -96,6 +111,7 @@ class ReviewService:
         canonical = replay_review(
             history.request,
             tuple(stored.event for stored in history.events),
+            state_cls=self.state_model,
         )
         self._reconcile_graph(thread_id, history, canonical)
         return canonical
@@ -160,8 +176,7 @@ class ReviewService:
         for stored in history.events:
             if stored.event_id == event_id:
                 stored_config = {
-                    key: stored.metadata.get(key)
-                    for key in config_metadata
+                    key: stored.metadata.get(key) for key in config_metadata
                 }
                 if stored_config != config_metadata:
                     raise PersistenceConflict(
@@ -186,9 +201,9 @@ class ReviewService:
             "validation_attempts": str(generated.attempts),
         }
         if generated.validation_errors:
-            metadata["validation_errors"] = "\n\n".join(
-                generated.validation_errors
-            )[:2000]
+            metadata["validation_errors"] = "\n\n".join(generated.validation_errors)[
+                :2000
+            ]
         return self.submit(
             thread_id,
             event_id,
@@ -217,8 +232,15 @@ class ReviewService:
     ) -> None:
         config = {"configurable": {"thread_id": thread_id}}
         events = tuple(stored.event for stored in history.events)
-        with sqlite_review_checkpointer(self.database_path) as checkpointer:
-            graph = build_review_graph(checkpointer)
+        with sqlite_review_checkpointer(
+            self.database_path,
+            self.checkpoint_types,
+        ) as checkpointer:
+            graph = build_review_graph(
+                checkpointer,
+                state_cls=self.state_model,
+                additional_types=self.checkpoint_types,
+            )
             snapshot = graph.get_state(config)
             checkpoint_review = snapshot.values.get("review")
             if checkpoint_review is None:
@@ -235,6 +257,7 @@ class ReviewService:
             expected_checkpoint = replay_review(
                 history.request,
                 events[:applied_events],
+                state_cls=self.state_model,
             )
             if checkpoint_review != expected_checkpoint:
                 raise PersistenceConflict("checkpoint diverges from canonical journal")

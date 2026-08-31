@@ -5,8 +5,8 @@ from collections.abc import Iterable
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
-from agent_review.lifecycle import ReviewState, ReviewStatus
-from agent_review.models import (
+from rubber_ducky.core.lifecycle import ReviewState, ReviewStatus
+from rubber_ducky.core.models import (
     BlockingConcernResponse,
     Concern,
     ConcernKind,
@@ -16,18 +16,18 @@ from agent_review.models import (
     Position,
     PriorPointResponse,
     ProtocolModel,
-    Rebuttal,
+    RebuttalBase,
     RebuttalPoint,
     RebuttalRequest,
-    ReviewRequest,
+    ReviewRequestBase,
     ReviewResponse,
     Verdict,
 )
 
 _REVIEW_CHECKPOINT_TYPES: tuple[type, ...] = (
-    ReviewRequest,
+    ReviewRequestBase,
     ReviewResponse,
-    Rebuttal,
+    RebuttalBase,
     EscalationSummary,
     Concern,
     PriorPointResponse,

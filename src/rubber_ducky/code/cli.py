@@ -1,4 +1,4 @@
-"""Stable JSON command-line interface for durable agent reviews."""
+"""Stable JSON command-line interface for durable code reviews."""
 
 import argparse
 import json
@@ -9,19 +9,19 @@ from typing import Any, TextIO
 
 from pydantic import BaseModel, ValidationError
 
-from agent_review.lifecycle import InvalidTransition, ReviewState, expected_event_type
-from agent_review.models import (
-    EscalationSummary,
-    Rebuttal,
-    ReviewRequest,
-    ReviewResponse,
+from rubber_ducky.code.models import Rebuttal, ReviewRequest
+from rubber_ducky.code.service import CodeReviewService
+from rubber_ducky.core.lifecycle import (
+    InvalidTransition,
+    ReviewState,
+    expected_event_type,
 )
-from agent_review.persistence import PersistenceConflict, ReviewNotFound
-from agent_review.reviewer_config import (
+from rubber_ducky.core.models import EscalationSummary, ReviewResponse
+from rubber_ducky.core.persistence import PersistenceConflict, ReviewNotFound
+from rubber_ducky.core.reviewer_config import (
     ReviewerConfigurationError,
     load_reviewer_config,
 )
-from agent_review.service import ReviewService
 
 
 class CliInputError(ValueError):
@@ -105,7 +105,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         arguments = _build_parser().parse_args(argv)
-        service = ReviewService(arguments.workspace.resolve())
+        service = CodeReviewService(arguments.workspace.resolve())
         if arguments.command == "start":
             request = _read_model(arguments.input, ReviewRequest)
             state = service.start(arguments.thread_id, arguments.slug, request)

@@ -1,7 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
-from agent_review.models import (
+from rubber_ducky.code.models import Rebuttal, ReviewRequest
+from rubber_ducky.core.models import (
     BlockingConcernResponse,
     Concern,
     ConcernKind,
@@ -10,10 +11,8 @@ from agent_review.models import (
     EscalationSummary,
     Position,
     PriorPointResponse,
-    Rebuttal,
     RebuttalPoint,
     RebuttalRequest,
-    ReviewRequest,
     ReviewResponse,
     Verdict,
 )

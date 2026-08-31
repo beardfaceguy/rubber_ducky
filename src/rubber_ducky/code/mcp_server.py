@@ -1,4 +1,4 @@
-"""MCP transport facade for the durable review application service."""
+"""MCP transport facade for the durable code-review application service."""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -8,15 +8,11 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
 from pydantic import BaseModel, JsonValue
 
-from agent_review.lifecycle import ReviewState, expected_event_type
-from agent_review.models import (
-    EscalationSummary,
-    Rebuttal,
-    ReviewRequest,
-    ReviewResponse,
-)
-from agent_review.reviewer_config import load_reviewer_config
-from agent_review.service import ReviewService
+from rubber_ducky.code.models import Rebuttal, ReviewRequest
+from rubber_ducky.code.service import CodeReviewService
+from rubber_ducky.core.lifecycle import ReviewState, expected_event_type
+from rubber_ducky.core.models import EscalationSummary, ReviewResponse
+from rubber_ducky.core.reviewer_config import load_reviewer_config
 
 
 class ReviewToolResult(BaseModel):
@@ -33,8 +29,8 @@ server = MCPServer(
 )
 
 
-def _service(workspace: str) -> ReviewService:
-    return ReviewService(Path(workspace).expanduser().resolve())
+def _service(workspace: str) -> CodeReviewService:
+    return CodeReviewService(Path(workspace).expanduser().resolve())
 
 
 def _result(thread_id: str, state: ReviewState) -> ReviewToolResult:
@@ -61,7 +57,7 @@ def _generate_review(
         api_key_env=api_key_env,
         options=options,
     )
-    return ReviewService(workspace_path).generate_review(
+    return CodeReviewService(workspace_path).generate_review(
         thread_id,
         event_id,
         config,

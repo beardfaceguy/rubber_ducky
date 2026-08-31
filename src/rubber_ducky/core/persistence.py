@@ -2,33 +2,28 @@
 
 import json
 import sqlite3
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-from agent_review.checkpointing import review_checkpoint_serializer
-from agent_review.lifecycle import (
+from rubber_ducky.core.checkpointing import review_checkpoint_serializer
+from rubber_ducky.core.lifecycle import (
     ReviewEvent,
     ReviewState,
     apply_event,
     replay_review,
     start_review,
 )
-from agent_review.models import (
+from rubber_ducky.core.models import (
     EscalationSummary,
-    Rebuttal,
-    ReviewRequest,
+    RebuttalBase,
+    ReviewRequestBase,
     ReviewResponse,
 )
 
-_EVENT_MODELS = {
-    "review_response": ReviewResponse,
-    "rebuttal": Rebuttal,
-    "escalation_summary": EscalationSummary,
-}
 _ALLOWED_EVENT_METADATA = {
     "provider",
     "model",
@@ -54,7 +49,7 @@ class StoredEvent:
 
 @dataclass(frozen=True)
 class StoredReview:
-    request: ReviewRequest
+    request: ReviewRequestBase
     audit_slug: str | None
     events: tuple[StoredEvent, ...]
 
@@ -68,14 +63,19 @@ class EventAppendResult:
 @contextmanager
 def sqlite_review_checkpointer(
     database_path: Path,
+    additional_types: Iterable[type] = (),
 ) -> Iterator[SqliteSaver]:
-    """Open a SQLite LangGraph saver using the shared strict serializer."""
+    """Open a SQLite LangGraph saver using the shared strict serializer.
+
+    ``additional_types`` extends the trusted deserialization allowlist with a
+    domain's concrete payload and state types.
+    """
 
     connection = sqlite3.connect(database_path, check_same_thread=False)
     try:
         yield SqliteSaver(
             connection,
-            serde=review_checkpoint_serializer(),
+            serde=review_checkpoint_serializer(additional_types),
         )
     finally:
         connection.close()
@@ -83,9 +83,24 @@ def sqlite_review_checkpointer(
 
 @dataclass(frozen=True)
 class SqliteReviewStore:
-    """Structured event source for canonical review-state replay."""
+    """Structured event source for canonical review-state replay.
+
+    ``request_model`` and ``rebuttal_model`` bind the domain-specific request
+    and rebuttal types used for (de)serialization; the reviewer response and
+    escalation summary are shared across all domains.
+    """
 
     database_path: Path
+    request_model: type[ReviewRequestBase] = ReviewRequestBase
+    rebuttal_model: type[RebuttalBase] = RebuttalBase
+    state_model: type[ReviewState] = ReviewState
+
+    def _event_models(self) -> dict[str, type]:
+        return {
+            "review_response": ReviewResponse,
+            "rebuttal": self.rebuttal_model,
+            "escalation_summary": EscalationSummary,
+        }
 
     def __post_init__(self) -> None:
         with self._connect() as connection:
@@ -134,7 +149,7 @@ class SqliteReviewStore:
     def create_review(
         self,
         thread_id: str,
-        request: ReviewRequest,
+        request: ReviewRequestBase,
         audit_slug: str,
     ) -> ReviewState:
         """Persist a new review request and return its initial state."""
@@ -160,14 +175,14 @@ class SqliteReviewStore:
                 ).fetchone()
                 if (
                     existing is not None
-                    and ReviewRequest.model_validate_json(existing[0]) == request
+                    and self.request_model.model_validate_json(existing[0]) == request
                     and existing[1] == audit_slug
                 ):
                     return self._load_review(connection, thread_id)
                 raise PersistenceConflict(
                     f"review {thread_id!r} already exists"
                 ) from error
-        return start_review(request)
+        return start_review(request, state_cls=self.state_model)
 
     def load_review(self, thread_id: str) -> ReviewState:
         """Replay persisted events into canonical review state."""
@@ -308,6 +323,7 @@ class SqliteReviewStore:
         return replay_review(
             history.request,
             tuple(stored.event for stored in history.events),
+            state_cls=self.state_model,
         )
 
     def _load_history(
@@ -342,7 +358,7 @@ class SqliteReviewStore:
             )
             for event_id, event_type, payload_json, metadata_json in event_rows
         )
-        request = ReviewRequest.model_validate_json(request_row[0])
+        request = self.request_model.model_validate_json(request_row[0])
         return StoredReview(
             request=request,
             audit_slug=request_row[1],
@@ -353,7 +369,7 @@ class SqliteReviewStore:
     def _serialize_event(event: ReviewEvent) -> tuple[str, str]:
         if isinstance(event, ReviewResponse):
             event_type = "review_response"
-        elif isinstance(event, Rebuttal):
+        elif isinstance(event, RebuttalBase):
             event_type = "rebuttal"
         elif isinstance(event, EscalationSummary):
             event_type = "escalation_summary"
@@ -361,9 +377,8 @@ class SqliteReviewStore:
             raise TypeError(f"unsupported event type: {type(event).__name__}")
         return event_type, event.model_dump_json()
 
-    @staticmethod
-    def _deserialize_event(event_type: str, payload_json: str) -> ReviewEvent:
-        model = _EVENT_MODELS.get(event_type)
+    def _deserialize_event(self, event_type: str, payload_json: str) -> ReviewEvent:
+        model = self._event_models().get(event_type)
         if model is None:
             raise ValueError(f"unknown persisted event type: {event_type!r}")
         return model.model_validate_json(payload_json)

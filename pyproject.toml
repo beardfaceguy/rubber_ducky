@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agent-review"
+name = "rubber-ducky"
 version = "0.1.0"
-description = "Deterministic protocol models for agent-to-agent code review"
+description = "Deterministic protocol engine for agent-to-agent code and plan review"
 requires-python = ">=3.12"
 dependencies = [
     "langchain>=1.3.16",
@@ -18,8 +18,8 @@ dependencies = [
 ]
 
 [project.scripts]
-agent-review = "agent_review.cli:run"
-agent-review-mcp = "agent_review.mcp_server:run"
+agent-review = "rubber_ducky.code.cli:run"
+agent-review-mcp = "rubber_ducky.code.mcp_server:run"
 
 [project.optional-dependencies]
 openai = [

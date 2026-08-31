@@ -1,7 +1,13 @@
 from langgraph.types import Command
 
-from agent_review.lifecycle import ReviewStatus
-from agent_review.models import (
+from rubber_ducky.code.models import (
+    CODE_CHECKPOINT_TYPES,
+    CodeReviewState,
+    Rebuttal,
+    ReviewRequest,
+)
+from rubber_ducky.core.lifecycle import ReviewStatus
+from rubber_ducky.core.models import (
     BlockingConcernResponse,
     Concern,
     ConcernKind,
@@ -9,13 +15,18 @@ from agent_review.models import (
     EscalationConcern,
     EscalationSummary,
     Position,
-    Rebuttal,
     RebuttalRequest,
-    ReviewRequest,
     ReviewResponse,
     Verdict,
 )
-from agent_review.workflow import build_review_graph
+from rubber_ducky.core.workflow import build_review_graph as _build_review_graph
+
+
+def build_review_graph():
+    return _build_review_graph(
+        state_cls=CodeReviewState,
+        additional_types=CODE_CHECKPOINT_TYPES,
+    )
 
 
 def make_request() -> ReviewRequest:

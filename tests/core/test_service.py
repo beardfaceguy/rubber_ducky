@@ -3,16 +3,17 @@ from pathlib import Path
 import pytest
 from langchain_core.runnables import RunnableLambda
 
-from agent_review.audit import AuditLog
-from agent_review.lifecycle import ReviewStatus
-from agent_review.models import ReviewRequest, ReviewResponse
-from agent_review.persistence import PersistenceConflict, ReviewNotFound
-from agent_review.reviewer_config import (
+from rubber_ducky.core.audit import AuditLog
+from rubber_ducky.core.lifecycle import ReviewStatus
+from rubber_ducky.code.models import ReviewRequest
+from rubber_ducky.code.service import CodeReviewService
+from rubber_ducky.core.models import ReviewResponse
+from rubber_ducky.core.persistence import PersistenceConflict, ReviewNotFound
+from rubber_ducky.core.reviewer_config import (
     ProviderDefinition,
     ReviewerModelConfig,
     ReviewerModelFactory,
 )
-from agent_review.service import ReviewService
 
 
 def make_request() -> ReviewRequest:
@@ -64,7 +65,7 @@ class RetryingReviewerModel(FakeReviewerModel):
 
 
 def test_service_starts_durable_review_and_audit(tmp_path: Path) -> None:
-    service = ReviewService(tmp_path)
+    service = CodeReviewService(tmp_path)
 
     state = service.start("review-1", "application-service", make_request())
 
@@ -77,7 +78,7 @@ def test_service_starts_durable_review_and_audit(tmp_path: Path) -> None:
 
 
 def test_service_start_is_idempotent(tmp_path: Path) -> None:
-    service = ReviewService(tmp_path)
+    service = CodeReviewService(tmp_path)
     first = service.start("review-1", "application-service", make_request())
     second = service.start("review-1", "application-service", make_request())
 
@@ -89,7 +90,7 @@ def test_service_start_is_idempotent(tmp_path: Path) -> None:
 
 
 def test_service_journals_audits_and_resumes_event(tmp_path: Path) -> None:
-    service = ReviewService(tmp_path)
+    service = CodeReviewService(tmp_path)
     service.start("review-1", "application-service", make_request())
     approval = ReviewResponse(
         round=1,
@@ -98,7 +99,7 @@ def test_service_journals_audits_and_resumes_event(tmp_path: Path) -> None:
     )
 
     completed = service.submit("review-1", "event-1", approval)
-    reopened = ReviewService(tmp_path).status("review-1")
+    reopened = CodeReviewService(tmp_path).status("review-1")
 
     assert completed.status is ReviewStatus.APPROVED
     assert reopened == completed
@@ -110,7 +111,7 @@ def test_service_journals_audits_and_resumes_event(tmp_path: Path) -> None:
 
 
 def test_service_retry_recovers_crash_after_journal_commit(tmp_path: Path) -> None:
-    service = ReviewService(tmp_path)
+    service = CodeReviewService(tmp_path)
     service.start("review-1", "application-service", make_request())
     approval = ReviewResponse(
         round=1,
@@ -119,7 +120,7 @@ def test_service_retry_recovers_crash_after_journal_commit(tmp_path: Path) -> No
     )
     service.store.append_event_once("review-1", "event-1", approval)
 
-    recovered = ReviewService(tmp_path).submit(
+    recovered = CodeReviewService(tmp_path).submit(
         "review-1",
         "event-1",
         approval,
@@ -133,7 +134,7 @@ def test_service_retry_recovers_crash_after_journal_commit(tmp_path: Path) -> No
 
 
 def test_service_retry_skips_event_already_applied_to_graph(tmp_path: Path) -> None:
-    service = ReviewService(tmp_path)
+    service = CodeReviewService(tmp_path)
     service.start("review-1", "application-service", make_request())
     approval = ReviewResponse(
         round=1,
@@ -153,7 +154,7 @@ def test_service_retry_skips_event_already_applied_to_graph(tmp_path: Path) -> N
 
 
 def test_reviewed_marker_text_cannot_suppress_audit_event(tmp_path: Path) -> None:
-    service = ReviewService(tmp_path)
+    service = CodeReviewService(tmp_path)
     request = make_request().model_copy(
         update={"relevant_diff": '<!-- event id="event-1" -->'}
     )
@@ -172,7 +173,7 @@ def test_reviewed_marker_text_cannot_suppress_audit_event(tmp_path: Path) -> Non
 
 
 def test_audit_projection_is_visible_at_least_once_after_crash(tmp_path: Path) -> None:
-    service = ReviewService(tmp_path)
+    service = CodeReviewService(tmp_path)
     service.start("review-1", "application-service", make_request())
     approval = ReviewResponse(round=1, position="AGREE", verdict="APPROVE")
     service.store.append_event_once("review-1", "event-1", approval)
@@ -192,7 +193,7 @@ def test_audit_projection_is_visible_at_least_once_after_crash(tmp_path: Path) -
 
 
 def test_audit_path_cannot_be_shared_by_different_thread(tmp_path: Path) -> None:
-    service = ReviewService(tmp_path)
+    service = CodeReviewService(tmp_path)
     service.start("review-1", "application-service", make_request())
 
     with pytest.raises(PersistenceConflict, match="different thread"):
@@ -203,7 +204,7 @@ def test_audit_path_cannot_be_shared_by_different_thread(tmp_path: Path) -> None
 
 
 def test_start_recovers_orphaned_request_artifact(tmp_path: Path) -> None:
-    service = ReviewService(tmp_path)
+    service = CodeReviewService(tmp_path)
     request = make_request()
     service.store.create_review(
         "review-1",
@@ -234,7 +235,7 @@ def test_start_recovers_orphaned_request_artifact(tmp_path: Path) -> None:
 def test_service_generates_configured_reviewer_response_with_metadata(
     tmp_path: Path,
 ) -> None:
-    service = ReviewService(tmp_path)
+    service = CodeReviewService(tmp_path)
     service.start("review-1", "application-service", make_request())
     config = ReviewerModelConfig(provider="local", model="offline-reviewer")
     factory = ReviewerModelFactory(
@@ -272,7 +273,7 @@ def test_service_generates_configured_reviewer_response_with_metadata(
 def test_service_persists_bounded_validation_retry_diagnostics(
     tmp_path: Path,
 ) -> None:
-    service = ReviewService(tmp_path)
+    service = CodeReviewService(tmp_path)
     service.start("review-1", "application-service", make_request())
     config = ReviewerModelConfig(provider="local", model="offline-reviewer")
     model = RetryingReviewerModel()
@@ -307,7 +308,7 @@ def test_service_persists_bounded_validation_retry_diagnostics(
 
 
 def test_generated_review_retry_does_not_call_model_twice(tmp_path: Path) -> None:
-    service = ReviewService(tmp_path)
+    service = CodeReviewService(tmp_path)
     service.start("review-1", "application-service", make_request())
     config = ReviewerModelConfig(provider="local", model="offline-reviewer")
     model = FakeReviewerModel()
@@ -343,7 +344,7 @@ def test_generated_review_retry_backfills_failed_audit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    service = ReviewService(tmp_path)
+    service = CodeReviewService(tmp_path)
     service.start("review-1", "application-service", make_request())
     config = ReviewerModelConfig(provider="local", model="offline-reviewer")
     model = FakeReviewerModel()
@@ -394,7 +395,7 @@ def test_generated_review_retry_backfills_failed_audit(
 
 
 def test_generated_review_never_persists_runtime_credential(tmp_path: Path) -> None:
-    service = ReviewService(tmp_path)
+    service = CodeReviewService(tmp_path)
     service.start("review-1", "application-service", make_request())
     credential = "runtime-secret-value"
     received_credentials: list[str | None] = []

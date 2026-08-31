@@ -7,20 +7,19 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field, ValidationError
 
-from agent_review.lifecycle import (
+from rubber_ducky.core.lifecycle import (
     InvalidTransition,
     ReviewState,
     ReviewStatus,
     apply_event,
 )
-from agent_review.models import (
-    UNCHANGED_DIFF,
+from rubber_ducky.core.models import (
+    UNCHANGED,
     Concern,
-    Disposition,
     EscalationSummary,
     Position,
     ProtocolModel,
-    Rebuttal,
+    RebuttalBase,
     ReviewResponse,
     Verdict,
 )
@@ -148,21 +147,27 @@ class ReviewerAdapter:
 
 @dataclass(frozen=True)
 class WorkerAdapter:
-    """Generate validated rebuttals or escalation summaries without tools."""
+    """Generate validated rebuttals or escalation summaries without tools.
+
+    ``rebuttal_schema`` binds the domain's concrete rebuttal type, and
+    ``unchanged_marker`` is the sentinel used when no revision is supplied.
+    """
 
     model: StructuredOutputModel
+    rebuttal_schema: type[RebuttalBase]
+    unchanged_marker: str = UNCHANGED
 
     def respond(
         self,
         state: ReviewState,
         *,
         revised_diff: str | None = None,
-    ) -> Rebuttal | EscalationSummary:
+    ) -> RebuttalBase | EscalationSummary:
         if state.status in {
             ReviewStatus.AWAITING_REBUTTAL,
             ReviewStatus.AWAITING_FINAL_POSITION,
         }:
-            schema: type[Rebuttal | EscalationSummary] = Rebuttal
+            schema: type[RebuttalBase | EscalationSummary] = self.rebuttal_schema
         elif state.status is ReviewStatus.AWAITING_ESCALATION_SUMMARY:
             if revised_diff is not None:
                 raise InvalidTransition(
@@ -175,10 +180,10 @@ class WorkerAdapter:
             )
 
         evidence_instruction = ""
-        if schema is Rebuttal:
+        if schema is self.rebuttal_schema:
             evidence_instruction = (
                 "\n\nNo revised diff was supplied by the caller. Do not ACCEPT concerns "
-                f"or invent code; use exactly {UNCHANGED_DIFF!r}."
+                f"or invent code; use exactly {self.unchanged_marker!r}."
                 if revised_diff is None
                 else (
                     "\n\nUse this caller-supplied revised diff exactly; do not alter or "
@@ -190,19 +195,15 @@ class WorkerAdapter:
             _participant_messages("worker", state, evidence_instruction)
         )
         event = schema.model_validate(raw_response)
-        if isinstance(event, Rebuttal):
-            accepted = any(
-                response.disposition is Disposition.ACCEPT
-                for response in event.blocking_responses
-            )
+        if isinstance(event, RebuttalBase):
             if revised_diff is None:
-                if accepted:
+                if event.accepts_any_concern():
                     raise InvalidTransition(
                         "ACCEPT requires a caller-supplied revised diff"
                     )
-                if event.revised_diff != UNCHANGED_DIFF:
+                if not event.is_unchanged():
                     raise InvalidTransition("worker adapter cannot invent revised code")
-            elif event.revised_diff != revised_diff.strip():
+            elif event.revised_text() != revised_diff.strip():
                 raise InvalidTransition(
                     "model output does not match caller-supplied revised diff"
                 )

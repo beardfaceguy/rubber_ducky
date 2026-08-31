@@ -1,8 +1,8 @@
 import re
 from pathlib import Path
 
-SKILL_ROOT = Path(__file__).parents[1] / "skill" / "agent-review"
-REVIEW_LOG_ROOT = Path(__file__).parents[1] / "agent_review"
+SKILL_ROOT = Path(__file__).parents[2] / "skill" / "agent-review"
+REVIEW_LOG_ROOT = Path(__file__).parents[2] / "agent_review"
 
 
 def test_skill_documents_cli_and_manual_fallback() -> None:

@@ -8,7 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 
 NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 RoundNumber = Annotated[int, Field(ge=1, le=3)]
-UNCHANGED_DIFF = "Unchanged — see Review Request."
+# Domain-agnostic sentinel meaning "the reviewed payload did not change".
+UNCHANGED = "Unchanged — see Review Request."
 
 
 def _numbers_are_increasing(ids: list[str]) -> bool:
@@ -94,18 +95,55 @@ class RebuttalPoint(ProtocolModel):
     text: NonEmptyText
 
 
-class Rebuttal(ProtocolModel):
-    """A worker response to a REVISE verdict."""
+class RebuttalBase(ProtocolModel):
+    """Domain-agnostic worker response to a REVISE verdict.
+
+    Subclasses add the domain-specific revised payload (a diff for code
+    review, a plan document for plan review) and validate that accepted
+    concerns are accompanied by an actual revision.
+    """
+
+    # Accept concrete subclass instances in base-typed fields without
+    # re-validating (and stripping) their domain-specific payload.
+    model_config = ConfigDict(revalidate_instances="never")
 
     round: RoundNumber
     position: Position
     blocking_responses: tuple[BlockingConcernResponse, ...] = Field(min_length=1)
-    revised_diff: NonEmptyText
     new_points: tuple[RebuttalPoint, ...] = Field(default_factory=tuple)
     requesting: RebuttalRequest
 
+    def accepts_any_concern(self) -> bool:
+        """Return whether the worker accepted at least one blocking concern."""
+
+        return any(
+            response.disposition is Disposition.ACCEPT
+            for response in self.blocking_responses
+        )
+
+    # ── Domain hooks (implemented by concrete rebuttal models) ──────────
+    def revised_heading(self) -> str:
+        """Return the Markdown heading for the revised payload section."""
+
+        raise NotImplementedError
+
+    def revised_text(self) -> str:
+        """Return the revised payload rendered as text."""
+
+        raise NotImplementedError
+
+    def revised_artifact_suffix(self) -> str:
+        """Return the artifact file suffix for the revised payload."""
+
+        raise NotImplementedError
+
+    def is_unchanged(self) -> bool:
+        """Return whether the worker left the reviewed payload unchanged."""
+
+        raise NotImplementedError
+
     @model_validator(mode="after")
-    def accepted_concerns_include_revised_diff(self) -> "Rebuttal":
+    def rebuttal_ids_and_request_are_valid(self) -> "RebuttalBase":
         blocking_ids = [response.concern_id for response in self.blocking_responses]
         point_ids = [point.id for point in self.new_points]
         if len(blocking_ids) != len(set(blocking_ids)):
@@ -116,12 +154,6 @@ class Rebuttal(ProtocolModel):
             point_ids
         ):
             raise ValueError("rebuttal IDs must be in monotonically increasing order")
-        accepted = any(
-            response.disposition is Disposition.ACCEPT
-            for response in self.blocking_responses
-        )
-        if accepted and self.revised_diff == UNCHANGED_DIFF:
-            raise ValueError("accepted concerns require an actual revised diff")
         if self.round == 3 and self.requesting is RebuttalRequest.RE_REVIEW:
             raise ValueError("round-three rebuttals cannot request another review")
         if self.round < 3 and self.requesting is RebuttalRequest.FINAL_POSITION:
@@ -220,14 +252,37 @@ class EscalationSummary(ProtocolModel):
         return self
 
 
-class ReviewRequest(ProtocolModel):
-    """The initial request that starts review round one."""
+class ReviewRequestBase(ProtocolModel):
+    """Domain-agnostic fields that start review round one.
+
+    Subclasses add the domain-specific reviewed payload (a diff for code
+    review, a plan document for plan review).
+    """
+
+    # Accept concrete subclass instances in base-typed fields without
+    # re-validating (and stripping) their domain-specific payload.
+    model_config = ConfigDict(revalidate_instances="never")
 
     protocol_version: Literal["1.3"] = "1.3"
     round: Literal[1] = 1
     task_id: NonEmptyText
     title: NonEmptyText
     proposed_solution: NonEmptyText
-    relevant_diff: NonEmptyText
     known_concerns: tuple[NonEmptyText, ...] = Field(default_factory=tuple)
     questions: tuple[NonEmptyText, ...] = Field(default_factory=tuple)
+
+    # ── Domain hooks (implemented by concrete request models) ───────────
+    def payload_heading(self) -> str:
+        """Return the Markdown heading for the reviewed payload section."""
+
+        raise NotImplementedError
+
+    def payload_text(self) -> str:
+        """Return the reviewed payload rendered as text."""
+
+        raise NotImplementedError
+
+    def artifact_suffix(self) -> str:
+        """Return the artifact file suffix for the reviewed payload."""
+
+        raise NotImplementedError

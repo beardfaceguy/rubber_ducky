@@ -4,15 +4,15 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-import agent_review.checkpointing as checkpointing_module
-import agent_review.lifecycle as lifecycle_module
-import agent_review.models as models_module
-from agent_review.checkpointing import (
+import rubber_ducky.core.checkpointing as checkpointing_module
+import rubber_ducky.core.lifecycle as lifecycle_module
+import rubber_ducky.core.models as models_module
+from rubber_ducky.core.checkpointing import (
     review_checkpoint_serializer,
     review_checkpoint_types,
 )
-from agent_review.lifecycle import start_review
-from agent_review.models import ReviewRequest
+from rubber_ducky.core.lifecycle import start_review
+from rubber_ducky.core.models import ReviewRequestBase
 
 
 class ExtensionState(BaseModel):
@@ -35,11 +35,10 @@ def test_serializer_factory_accepts_explicit_extension_types() -> None:
 def test_serializer_factory_covers_default_review_state() -> None:
     serializer = review_checkpoint_serializer()
     original = start_review(
-        ReviewRequest(
+        ReviewRequestBase(
             task_id="AR-4",
             title="Checkpoint review",
             proposed_solution="Use one serializer factory.",
-            relevant_diff="+serializer = shared",
         )
     )
 
