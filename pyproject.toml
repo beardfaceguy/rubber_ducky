@@ -37,6 +37,9 @@ openrouter = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# importlib mode keeps the repo root off sys.path so the workspace audit dir
+# `rubber_ducky/` cannot shadow the installed `rubber_ducky` package.
+addopts = "--import-mode=importlib"
 
 [dependency-groups]
 dev = [
