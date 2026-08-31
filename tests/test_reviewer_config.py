@@ -323,14 +323,60 @@ def test_factory_builds_selected_provider_and_model_without_network(
     }
 
 
+def test_factory_builds_openrouter_with_full_slug_and_generic_credential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    sentinel = object()
+
+    def fake_init_chat_model(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(config_module, "init_chat_model", fake_init_chat_model)
+    config = ReviewerModelConfig(
+        provider="openrouter",
+        model="anthropic/claude-sonnet-4.6",
+        options={
+            "default_headers": {
+                "HTTP-Referer": "https://example.com",
+                "X-OpenRouter-Title": "Agent Review",
+            }
+        },
+    )
+
+    model = ReviewerModelFactory().create(
+        config,
+        environment={"LLM_PROVIDER_KEY": "runtime-secret"},
+    )
+
+    assert model is sentinel
+    assert captured == {
+        "model": "anthropic/claude-sonnet-4.6",
+        "model_provider": "openrouter",
+        "api_key": "runtime-secret",
+        "default_headers": {
+            "HTTP-Referer": "https://example.com",
+            "X-OpenRouter-Title": "Agent Review",
+        },
+    }
+    assert "runtime-secret" not in config.model_dump_json()
+    assert config.audit_metadata() == {
+        "provider": "openrouter",
+        "model": "anthropic/claude-sonnet-4.6",
+    }
+
+
+@pytest.mark.parametrize("provider", ("openai", "openrouter"))
 def test_factory_reports_missing_provider_integration(
     monkeypatch: pytest.MonkeyPatch,
+    provider: str,
 ) -> None:
     def missing_integration(**_kwargs: object) -> object:
         raise ImportError("install langchain-openai")
 
     monkeypatch.setattr(config_module, "init_chat_model", missing_integration)
-    config = ReviewerModelConfig(provider="openai", model="gpt-configured")
+    config = ReviewerModelConfig(provider=provider, model="configured-model")
 
     with pytest.raises(ReviewerConfigurationError, match="integration"):
         ReviewerModelFactory().create(
@@ -382,6 +428,7 @@ def test_factory_supports_explicit_local_provider_extension() -> None:
     (
         ("openai", "LLM_PROVIDER_KEY"),
         ("anthropic", "LLM_PROVIDER_KEY"),
+        ("openrouter", "LLM_PROVIDER_KEY"),
     ),
 )
 def test_builtin_providers_require_environment_credential(

@@ -28,6 +28,9 @@ openai = [
 anthropic = [
     "langchain-anthropic>=1.6.1",
 ]
+openrouter = [
+    "langchain-openrouter>=0.2.8",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

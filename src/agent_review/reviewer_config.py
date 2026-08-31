@@ -139,6 +139,7 @@ def _langchain_provider(
 _BUILTIN_PROVIDERS = {
     "openai": ProviderDefinition(_langchain_provider),
     "anthropic": ProviderDefinition(_langchain_provider),
+    "openrouter": ProviderDefinition(_langchain_provider),
 }
 
 

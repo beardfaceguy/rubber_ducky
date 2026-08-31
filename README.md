@@ -37,7 +37,7 @@ Clone the repository and install the CLI and MCP server as a `uv` tool:
 ```bash
 git clone https://github.com/beardfaceguy/agent_review.git
 cd agent_review
-uv tool install --editable '.[anthropic,openai]'
+uv tool install --editable '.[anthropic,openai,openrouter]'
 command -v agent-review-mcp
 ```
 
@@ -102,13 +102,40 @@ value in `.env` before running a review.
 }
 ```
 
-Install the selected integration with `uv sync --extra openai` or
-`uv sync --extra anthropic`. The tool loads credentials from the global `.env`
-without modifying the process environment; real process variables override
-file values. Configuration and audit metadata contain only environment-variable
-names, provider, and model. The `.env` is credential input only:
-provider/model/XDG settings placed there do not participate in configuration
-selection, and variable interpolation is disabled.
+Install the selected integration with `uv sync --extra openai`,
+`uv sync --extra anthropic`, or `uv sync --extra openrouter`. The tool loads
+credentials from the global `.env` without modifying the process environment;
+real process variables override file values. Configuration and audit metadata
+contain only environment-variable names, provider, and model. The `.env` is
+credential input only: provider/model/XDG settings placed there do not
+participate in configuration selection, and variable interpolation is
+disabled.
+
+### OpenRouter reviewer
+
+OpenRouter uses LangChain's native `langchain-openrouter` integration. Set
+`provider` to `openrouter` and use the complete OpenRouter model slug:
+
+```json
+{
+  "reviewer": {
+    "provider": "openrouter",
+    "model": "anthropic/claude-sonnet-4.6",
+    "api_key_env": "LLM_PROVIDER_KEY",
+    "options": {
+      "default_headers": {
+        "HTTP-Referer": "https://example.com",
+        "X-OpenRouter-Title": "Agent Review"
+      }
+    }
+  }
+}
+```
+
+The attribution headers are optional and must identify your own application.
+`LLM_PROVIDER_KEY` remains the generic default credential variable. To use the
+conventional OpenRouter name instead, set `api_key_env` to
+`OPENROUTER_API_KEY`. Do not put either credential value in `options`.
 
 Reviewer output that fails protocol schema validation receives one corrective
 retry. A successful retry records its attempt count and redacted validation

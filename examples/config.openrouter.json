@@ -1,0 +1,7 @@
+{
+  "reviewer": {
+    "provider": "openrouter",
+    "model": "YOUR_OPENROUTER_MODEL_ID",
+    "api_key_env": "LLM_PROVIDER_KEY"
+  }
+}
