@@ -1,18 +1,29 @@
 ---
-name: agent-review
+name: rubber_ducky_code
 description: formal agent-to-agent code review
 disable-model-invocation: false
 ---
 
-# Agent Review
+# Rubber Ducky — Code Review
 
-Use this skill for formal agent-to-agent reviews of code or diffs. Conceptual
-and high-level plan reviews are deferred to a future protocol version.
+Use this skill for formal agent-to-agent reviews of code or diffs. To review a
+proposed plan or design instead, use `rubber_ducky_plan`; the `rubber_ducky`
+router chooses between them.
 
 ## Required first step
 
-Read the complete [Review Protocol](references/review-protocol.md). It remains
-the authority for roles, message content, verdicts, rounds, and escalation.
+Read the complete [Review Protocol](../references/review-protocol.md). It is the
+shared authority for roles, message content, verdicts, rounds, and escalation.
+
+## Payload
+
+This domain's reviewed artifact is the actual code diff. In the shared
+protocol's message formats, the artifact sections take these headings:
+
+- Review Request → `### Relevant Code / Diff` — the full diff or code under
+  review. Never summarize code; include it.
+- Rebuttal → `### Revised Code / Diff` — the actual revised code when any
+  blocking concern is ACCEPTed, otherwise `Unchanged — see Review Request.`
 
 ## Primary workflow
 

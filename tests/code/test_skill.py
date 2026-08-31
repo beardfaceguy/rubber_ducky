@@ -1,8 +1,22 @@
 import re
 from pathlib import Path
 
-SKILL_ROOT = Path(__file__).parents[2] / "skill" / "agent-review"
+SKILL_ROOT = Path(__file__).parents[2] / "skill" / "rubber_ducky_code"
+ROUTER_ROOT = Path(__file__).parents[2] / "skill" / "rubber_ducky"
+SHARED_PROTOCOL = (
+    Path(__file__).parents[2] / "skill" / "references" / "review-protocol.md"
+)
 REVIEW_LOG_ROOT = Path(__file__).parents[2] / "agent_review"
+
+
+def test_router_skill_delegates_to_both_domains() -> None:
+    router = (ROUTER_ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+    assert "name: rubber_ducky" in router
+    assert "rubber_ducky_code" in router
+    assert "rubber_ducky_plan" in router
+    assert "agent-review" in router
+    assert "plan-review" in router
 
 
 def test_skill_documents_cli_and_manual_fallback() -> None:
@@ -23,13 +37,21 @@ def test_skill_documents_cli_and_manual_fallback() -> None:
     assert "never write files or invoke CLI/MCP write" in skill
 
 
-def test_skill_bundles_authoritative_protocol() -> None:
-    protocol = (SKILL_ROOT / "references" / "review-protocol.md").read_text(
-        encoding="utf-8"
-    )
+def test_code_skill_defines_its_payload_and_links_shared_protocol() -> None:
+    skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+    assert "../references/review-protocol.md" in skill
+    assert "Relevant Code / Diff" in skill
+    assert "Revised Code / Diff" in skill
+
+
+def test_shared_protocol_is_authoritative_and_domain_agnostic() -> None:
+    protocol = SHARED_PROTOCOL.read_text(encoding="utf-8")
 
     assert "**Version:** 1.3" in protocol
-    assert "Reviews are of the actual code/diff" in protocol
+    assert "Reviews are of the actual reviewed artifact" in protocol
+    assert "### Reviewed Artifact" in protocol
+    assert "### Revised Artifact" in protocol
 
 
 def test_vikunja_review_logs_use_absolute_database_ids() -> None:

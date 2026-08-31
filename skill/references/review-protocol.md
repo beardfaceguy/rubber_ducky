@@ -1,14 +1,22 @@
 # Agent Review Protocol
 
 **Version:** 1.3
-**Purpose:** Standard format for agent-to-agent code and diff reviews. Both the
-worker agent (requesting review) and the reviewer agent MUST follow this protocol exactly.
-Deviation from this format is itself a protocol violation and should be called out
-by the other party.
+**Purpose:** Standard format for agent-to-agent reviews. Both the worker agent
+(requesting review) and the reviewer agent MUST follow this protocol exactly.
+Deviation from this format is itself a protocol violation and should be called
+out by the other party.
+
+This protocol is domain-agnostic: it governs roles, rounds, ID allocation,
+verdicts, consensus, and escalation. The **reviewed artifact** — a code diff, a
+plan document, etc. — and its exact section headings are defined by the review
+domain's own skill (`rubber_ducky_code`, `rubber_ducky_plan`). Everything else
+below is identical across domains.
 
 **Changelog:**
+
 - v1.3 — Defined exact round counting, terminal message values, and ID
-  allocation, and required reviewer verification before consensus.
+  allocation, and required reviewer verification before consensus. Generalized
+  the reviewed artifact so code and plan domains share one protocol.
 - v1.2 — Log location is now workspace-relative (`agent_review/` at workspace
   root, created if missing) instead of a fixed absolute path.
 - v1.1 — Added Role Determination and Missing Information sections.
@@ -24,8 +32,8 @@ Identify which role you are performing before doing anything else:
   reviews, own and update the review log, evaluate concerns, submit rebuttals,
   and produce escalation summaries.
 - **Reviewer:** Your prompt contains a Review Request addressed to you. You
-  evaluate the actual code or diff, return protocol-formatted responses, track
-  concerns by stable ID, and NEVER write files.
+  evaluate the actual reviewed artifact, return protocol-formatted responses,
+  track concerns by stable ID, and NEVER write files.
 
 If your role is ambiguous, ask the operator to clarify before proceeding.
 
@@ -36,9 +44,9 @@ If your role is ambiguous, ask the operator to clarify before proceeding.
 1. The worker submits a **Review Request** for a single task.
 2. The reviewer responds with a **Review Response**.
 3. If the verdict is REVISE, the worker responds with a **Rebuttal** that
-   addresses every blocking concern and includes the revised diff when it
+   addresses every blocking concern and includes the revised artifact when it
    accepts any concern.
-4. The reviewer inspects the rebuttal and revised diff, then sends the next
+4. The reviewer inspects the rebuttal and revised artifact, then sends the next
    numbered **Review Response**.
 5. The exchange continues until consensus or the end of round 3.
 6. If the round-3 response is not APPROVE, the worker may append a round-3
@@ -73,6 +81,11 @@ The worker owns the log file. The reviewer never writes files.
 
 ## Message Formats
 
+The **Reviewed Artifact** and **Revised Artifact** sections carry the domain
+payload. The domain skill names their exact headings (e.g. "Relevant Code /
+Diff" and "Revised Code / Diff"; "Proposed Plan" and "Revised Plan") and their
+contents. Never summarize the artifact — include it verbatim.
+
 ### 1. Review Request (worker → reviewer)
 
 ```markdown
@@ -83,8 +96,9 @@ The worker owns the log file. The reviewer never writes files.
 ### Proposed Solution
 <Concise description of the approach and reasoning.>
 
-### Relevant Code / Diff
-<The actual diff or code under review. Never summarize code — include it.>
+### Reviewed Artifact
+<The full artifact under review, under the heading your domain skill defines.
+Never summarize — include it.>
 
 ### Known Concerns
 <Numbered list of the worker's own doubts or open questions, or "None.">
@@ -126,10 +140,11 @@ raised blocking concerns as resolved when appropriate (e.g., "B2: resolved").>
 one of: ACCEPT (will fix), DISPUTE (with counter-argument and evidence), or
 CLARIFY (concern is based on a misreading — explain).>
 
-### Revised Code / Diff
-<Required in every rebuttal. If any blocking concern is ACCEPTed, implement it
-and include the actual revised code or diff. If the rebuttal only disputes or
-clarifies concerns and no code changed, state "Unchanged — see Review Request.">
+### Revised Artifact
+<Required in every rebuttal, under the heading your domain skill defines. If any
+blocking concern is ACCEPTed, apply it and include the actual revised artifact.
+If the rebuttal only disputes or clarifies concerns and nothing changed, state
+"Unchanged — see Review Request.">
 
 ### New Points
 <Numbered list: R1, R2, ... New arguments or evidence, or "None.">
@@ -152,7 +167,7 @@ clarifies concerns and no code changed, state "Unchanged — see Review Request.
   1. IDs are never reused or renumbered between rounds.
 - ACCEPT acknowledges that a blocking concern is valid but does not resolve
   it. A blocking concern is resolved only when the reviewer explicitly says
-  "B<n>: resolved" after inspecting the rebuttal and any revised code or diff.
+  "B<n>: resolved" after inspecting the rebuttal and any revised artifact.
 
 ### Verdicts
 - **APPROVE:** No unresolved blocking concerns. Non-blocking suggestions may
@@ -165,7 +180,7 @@ clarifies concerns and no code changed, state "Unchanged — see Review Request.
 ### Consensus
 - Consensus = a Review Response with verdict **APPROVE**.
 - A revision plan or an ACCEPT response is not consensus. Accepted changes
-  must be implemented, included in the rebuttal, and verified by the reviewer.
+  must be applied, included in the rebuttal, and verified by the reviewer.
 - Only blocking concerns can prevent APPROVE. Do not deadlock over
   non-blocking suggestions.
 
@@ -176,10 +191,10 @@ clarifies concerns and no code changed, state "Unchanged — see Review Request.
   stated with a reason ("Re B2: ACCEPT — the race you describe is real because
   ...", not "ACCEPT.").
 - Cite evidence where possible: file paths, line numbers, doc links, test
-  output, language/library semantics.
+  output, language/library semantics, prior decisions, dependencies.
 
 ### Missing information
-- Do not fabricate task identifiers, round numbers, code, diffs, prior
+- Do not fabricate task identifiers, round numbers, artifact contents, prior
   messages, test results, or review-log contents.
 - If required information is missing from your context, request it from the
   other party (or the operator) before issuing a verdict, rebuttal, or log
@@ -204,8 +219,8 @@ ESCALATE), the worker appends to the log:
 ## Scope Notes
 
 - One task per review conversation. Do not bundle tasks.
-- Reviews are of the actual code/diff, not descriptions of it.
-- Conceptual and high-level plan reviews are not supported by this version of
-  the protocol.
-- Trivial changes (typo fixes, comment edits, formatting-only diffs) may skip
-  review entirely; the worker notes "review skipped: trivial" in the task log.
+- Reviews are of the actual reviewed artifact, not descriptions of it.
+- Each domain skill defines the artifact's format and section headings; do not
+  invent a payload shape the skill does not specify.
+- Trivial changes may skip review entirely; the worker notes "review skipped:
+  trivial" in the task log.
