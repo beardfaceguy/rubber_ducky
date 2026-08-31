@@ -1,4 +1,9 @@
-"""MCP transport facade for the durable plan-review application service."""
+"""MCP transport facade for the durable plan-review application service.
+
+The tool functions are registered onto a server via ``register_tools`` so the
+same set can be mounted on a standalone plan server or the unified
+``rubber_ducky`` server.
+"""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -21,12 +26,6 @@ class ReviewToolResult(BaseModel):
     thread_id: str
     state: ReviewState
     expected_event: str | None
-
-
-server = MCPServer(
-    name="plan-review",
-    description="Durable, protocol-validated agent-to-agent plan review",
-)
 
 
 def _service(workspace: str) -> PlanReviewService:
@@ -88,12 +87,6 @@ _IDEMPOTENT_MODEL_WRITE = ToolAnnotations(
 )
 
 
-@server.tool(
-    name="plan_review_start",
-    description="Start or idempotently recover a durable plan review.",
-    annotations=_IDEMPOTENT_WRITE,
-    structured_output=True,
-)
 def start_review(
     workspace: str,
     thread_id: str,
@@ -106,12 +99,6 @@ def start_review(
     )
 
 
-@server.tool(
-    name="plan_review_status",
-    description="Load canonical plan-review status and repair a lagging checkpoint.",
-    annotations=_IDEMPOTENT_WRITE,
-    structured_output=True,
-)
 def review_status(workspace: str, thread_id: str) -> ReviewToolResult:
     return _execute(
         thread_id,
@@ -119,12 +106,6 @@ def review_status(workspace: str, thread_id: str) -> ReviewToolResult:
     )
 
 
-@server.tool(
-    name="plan_review_respond",
-    description="Journal and apply a reviewer response.",
-    annotations=_IDEMPOTENT_WRITE,
-    structured_output=True,
-)
 def submit_review_response(
     workspace: str,
     thread_id: str,
@@ -137,12 +118,6 @@ def submit_review_response(
     )
 
 
-@server.tool(
-    name="plan_review_generate",
-    description="Generate and apply a reviewer response with configured provider/model.",
-    annotations=_IDEMPOTENT_MODEL_WRITE,
-    structured_output=True,
-)
 def generate_review_response(
     workspace: str,
     thread_id: str,
@@ -166,12 +141,6 @@ def generate_review_response(
     )
 
 
-@server.tool(
-    name="plan_review_rebut",
-    description="Journal and apply a worker rebuttal.",
-    annotations=_IDEMPOTENT_WRITE,
-    structured_output=True,
-)
 def submit_rebuttal(
     workspace: str,
     thread_id: str,
@@ -184,12 +153,6 @@ def submit_rebuttal(
     )
 
 
-@server.tool(
-    name="plan_review_resume",
-    description="Journal an escalation summary and complete human escalation.",
-    annotations=_IDEMPOTENT_WRITE,
-    structured_output=True,
-)
 def resume_escalation(
     workspace: str,
     thread_id: str,
@@ -200,6 +163,56 @@ def resume_escalation(
         thread_id,
         lambda: _service(workspace).submit(thread_id, event_id, summary),
     )
+
+
+def register_tools(target: MCPServer) -> None:
+    """Register the six plan-review tools onto ``target``."""
+
+    target.tool(
+        name="plan_review_start",
+        description="Start or idempotently recover a durable plan review.",
+        annotations=_IDEMPOTENT_WRITE,
+        structured_output=True,
+    )(start_review)
+    target.tool(
+        name="plan_review_status",
+        description="Load canonical plan-review status and repair a lagging checkpoint.",
+        annotations=_IDEMPOTENT_WRITE,
+        structured_output=True,
+    )(review_status)
+    target.tool(
+        name="plan_review_respond",
+        description="Journal and apply a reviewer response.",
+        annotations=_IDEMPOTENT_WRITE,
+        structured_output=True,
+    )(submit_review_response)
+    target.tool(
+        name="plan_review_generate",
+        description=(
+            "Generate and apply a reviewer response with configured provider/model."
+        ),
+        annotations=_IDEMPOTENT_MODEL_WRITE,
+        structured_output=True,
+    )(generate_review_response)
+    target.tool(
+        name="plan_review_rebut",
+        description="Journal and apply a worker rebuttal.",
+        annotations=_IDEMPOTENT_WRITE,
+        structured_output=True,
+    )(submit_rebuttal)
+    target.tool(
+        name="plan_review_resume",
+        description="Journal an escalation summary and complete human escalation.",
+        annotations=_IDEMPOTENT_WRITE,
+        structured_output=True,
+    )(resume_escalation)
+
+
+server = MCPServer(
+    name="plan-review",
+    description="Durable, protocol-validated agent-to-agent plan review",
+)
+register_tools(server)
 
 
 def run() -> None:

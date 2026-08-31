@@ -1,4 +1,9 @@
-"""MCP transport facade for the durable code-review application service."""
+"""MCP transport facade for the durable code-review application service.
+
+The tool functions are registered onto a server via ``register_tools`` so the
+same set can be mounted on a standalone code server or the unified
+``rubber_ducky`` server.
+"""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -16,17 +21,11 @@ from rubber_ducky.core.reviewer_config import load_reviewer_config
 
 
 class ReviewToolResult(BaseModel):
-    """Structured MCP result shared by all review tools."""
+    """Structured MCP result shared by all code-review tools."""
 
     thread_id: str
     state: ReviewState
     expected_event: str | None
-
-
-server = MCPServer(
-    name="agent-review",
-    description="Durable, protocol-validated agent-to-agent code review",
-)
 
 
 def _service(workspace: str) -> CodeReviewService:
@@ -88,12 +87,6 @@ _IDEMPOTENT_MODEL_WRITE = ToolAnnotations(
 )
 
 
-@server.tool(
-    name="agent_review_start",
-    description="Start or idempotently recover a durable code review.",
-    annotations=_IDEMPOTENT_WRITE,
-    structured_output=True,
-)
 def start_review(
     workspace: str,
     thread_id: str,
@@ -106,12 +99,6 @@ def start_review(
     )
 
 
-@server.tool(
-    name="agent_review_status",
-    description="Load canonical review status and repair a lagging checkpoint.",
-    annotations=_IDEMPOTENT_WRITE,
-    structured_output=True,
-)
 def review_status(workspace: str, thread_id: str) -> ReviewToolResult:
     return _execute(
         thread_id,
@@ -119,12 +106,6 @@ def review_status(workspace: str, thread_id: str) -> ReviewToolResult:
     )
 
 
-@server.tool(
-    name="agent_review_respond",
-    description="Journal and apply a reviewer response.",
-    annotations=_IDEMPOTENT_WRITE,
-    structured_output=True,
-)
 def submit_review_response(
     workspace: str,
     thread_id: str,
@@ -137,12 +118,6 @@ def submit_review_response(
     )
 
 
-@server.tool(
-    name="agent_review_generate",
-    description="Generate and apply a reviewer response with configured provider/model.",
-    annotations=_IDEMPOTENT_MODEL_WRITE,
-    structured_output=True,
-)
 def generate_review_response(
     workspace: str,
     thread_id: str,
@@ -166,12 +141,6 @@ def generate_review_response(
     )
 
 
-@server.tool(
-    name="agent_review_rebut",
-    description="Journal and apply a worker rebuttal.",
-    annotations=_IDEMPOTENT_WRITE,
-    structured_output=True,
-)
 def submit_rebuttal(
     workspace: str,
     thread_id: str,
@@ -184,12 +153,6 @@ def submit_rebuttal(
     )
 
 
-@server.tool(
-    name="agent_review_resume",
-    description="Journal an escalation summary and complete human escalation.",
-    annotations=_IDEMPOTENT_WRITE,
-    structured_output=True,
-)
 def resume_escalation(
     workspace: str,
     thread_id: str,
@@ -200,6 +163,56 @@ def resume_escalation(
         thread_id,
         lambda: _service(workspace).submit(thread_id, event_id, summary),
     )
+
+
+def register_tools(target: MCPServer) -> None:
+    """Register the six code-review tools onto ``target``."""
+
+    target.tool(
+        name="agent_review_start",
+        description="Start or idempotently recover a durable code review.",
+        annotations=_IDEMPOTENT_WRITE,
+        structured_output=True,
+    )(start_review)
+    target.tool(
+        name="agent_review_status",
+        description="Load canonical review status and repair a lagging checkpoint.",
+        annotations=_IDEMPOTENT_WRITE,
+        structured_output=True,
+    )(review_status)
+    target.tool(
+        name="agent_review_respond",
+        description="Journal and apply a reviewer response.",
+        annotations=_IDEMPOTENT_WRITE,
+        structured_output=True,
+    )(submit_review_response)
+    target.tool(
+        name="agent_review_generate",
+        description=(
+            "Generate and apply a reviewer response with configured provider/model."
+        ),
+        annotations=_IDEMPOTENT_MODEL_WRITE,
+        structured_output=True,
+    )(generate_review_response)
+    target.tool(
+        name="agent_review_rebut",
+        description="Journal and apply a worker rebuttal.",
+        annotations=_IDEMPOTENT_WRITE,
+        structured_output=True,
+    )(submit_rebuttal)
+    target.tool(
+        name="agent_review_resume",
+        description="Journal an escalation summary and complete human escalation.",
+        annotations=_IDEMPOTENT_WRITE,
+        structured_output=True,
+    )(resume_escalation)
+
+
+server = MCPServer(
+    name="agent-review",
+    description="Durable, protocol-validated agent-to-agent code review",
+)
+register_tools(server)
 
 
 def run() -> None:
