@@ -1,6 +1,6 @@
 """Concrete code-review payload models and their durable state binding."""
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from rubber_ducky.core.lifecycle import ReviewState
 from rubber_ducky.core.models import (
@@ -60,6 +60,9 @@ class CodeReviewState(ReviewState):
     reconstruction restore concrete code payloads (not the abstract base)
     when nested models arrive as plain dicts.
     """
+
+    request: ReviewRequest
+    rebuttals: tuple[Rebuttal, ...] = Field(default_factory=tuple)
 
     request_model = ReviewRequest
     rebuttal_model = Rebuttal

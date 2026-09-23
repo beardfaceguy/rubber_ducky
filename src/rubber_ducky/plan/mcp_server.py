@@ -16,7 +16,7 @@ from pydantic import BaseModel, JsonValue
 from rubber_ducky.core.lifecycle import ReviewState, expected_event_type
 from rubber_ducky.core.models import EscalationSummary, ReviewResponse
 from rubber_ducky.core.reviewer_config import load_reviewer_config
-from rubber_ducky.plan.models import PlanRebuttal, PlanReviewRequest
+from rubber_ducky.plan.models import PlanRebuttal, PlanReviewRequest, PlanReviewState
 from rubber_ducky.plan.service import PlanReviewService
 
 
@@ -24,7 +24,7 @@ class ReviewToolResult(BaseModel):
     """Structured MCP result shared by all plan review tools."""
 
     thread_id: str
-    state: ReviewState
+    state: PlanReviewState
     expected_event: str | None
 
 

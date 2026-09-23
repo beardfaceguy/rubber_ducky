@@ -13,7 +13,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
 from pydantic import BaseModel, JsonValue
 
-from rubber_ducky.code.models import Rebuttal, ReviewRequest
+from rubber_ducky.code.models import CodeReviewState, Rebuttal, ReviewRequest
 from rubber_ducky.code.service import CodeReviewService
 from rubber_ducky.core.lifecycle import ReviewState, expected_event_type
 from rubber_ducky.core.models import EscalationSummary, ReviewResponse
@@ -24,7 +24,7 @@ class ReviewToolResult(BaseModel):
     """Structured MCP result shared by all code-review tools."""
 
     thread_id: str
-    state: ReviewState
+    state: CodeReviewState
     expected_event: str | None
 
 

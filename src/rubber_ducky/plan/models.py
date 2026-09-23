@@ -96,6 +96,9 @@ class PlanRebuttal(RebuttalBase):
 class PlanReviewState(ReviewState):
     """Durable review state bound to the plan review payload types."""
 
+    request: PlanReviewRequest
+    rebuttals: tuple[PlanRebuttal, ...] = Field(default_factory=tuple)
+
     request_model = PlanReviewRequest
     rebuttal_model = PlanRebuttal
 
