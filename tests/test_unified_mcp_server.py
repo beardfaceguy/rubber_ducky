@@ -25,7 +25,7 @@ def call_tool(name: str, arguments: dict):
     return asyncio.run(server.call_tool(name, arguments))
 
 
-def test_unified_server_exposes_both_toolsets() -> None:
+def test_unified_server_exposes_all_review_modes() -> None:
     tools = asyncio.run(server.list_tools())
     tool_names = {tool.name for tool in tools}
 
@@ -42,6 +42,11 @@ def test_unified_server_exposes_both_toolsets() -> None:
         "rubber_ducky_plan_generate",
         "rubber_ducky_plan_rebut",
         "rubber_ducky_plan_resume",
+        "rubber_ducky_adr_start",
+        "rubber_ducky_adr_status",
+        "rubber_ducky_adr_respond",
+        "rubber_ducky_adr_rebut",
+        "rubber_ducky_adr_resume",
     }
 
 

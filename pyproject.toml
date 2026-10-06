@@ -22,6 +22,8 @@ rubber-ducky-code = "rubber_ducky.code.cli:run"
 rubber-ducky-code-mcp = "rubber_ducky.code.mcp_server:run"
 rubber-ducky-plan = "rubber_ducky.plan.cli:run"
 rubber-ducky-plan-mcp = "rubber_ducky.plan.mcp_server:run"
+rubber-ducky-adr = "rubber_ducky.adr.cli:run"
+rubber-ducky-adr-mcp = "rubber_ducky.adr.mcp_server:run"
 rubber-ducky-mcp = "rubber_ducky.mcp_server:run"
 
 [project.optional-dependencies]

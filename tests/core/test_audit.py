@@ -343,3 +343,23 @@ def test_append_escalation_summary_renders_operator_decision(tmp_path: Path) -> 
     assert "**Worker's final position:** The implementation is safe." in log
     assert "**Reviewer's final position:** The blockers remain." in log
     assert "**Decision needed from operator:** Should implementation continue?" in log
+
+
+def test_append_prepared_projects_preexisting_artifact(tmp_path: Path) -> None:
+    audit = AuditLog.create(tmp_path, task_id="AR-3", slug="audit-logging")
+    request = ReviewRequest(
+        task_id="AR-3",
+        title="Add audit logging",
+        proposed_solution="Project prepared artifacts.",
+        relevant_diff="+prepared = True",
+    )
+    evidence = audit.store_artifact("prepared.diff", request.relevant_diff.encode())
+
+    projected = audit.append_prepared(request, event_id="request", evidence=evidence)
+
+    assert projected == evidence
+    assert (audit.artifacts_dir / "prepared.diff").read_text() == request.relevant_diff
+    assert list(audit.artifacts_dir.iterdir()) == [audit.artifacts_dir / "prepared.diff"]
+    assert 'artifact path="AR-3-audit-logging/artifacts/prepared.diff"' in (
+        audit.log_path.read_text()
+    )

@@ -6,15 +6,19 @@ while the calling agent remains responsible for deciding whether each concern
 is correct and for making any resulting changes. Review history is saved so a
 crash or restarted agent does not lose the discussion.
 
-It reviews two kinds of artifact through one shared protocol:
+It reviews three kinds of artifact through one shared protocol:
 
 - **Code review** — the reviewed artifact is a real diff. CLI `rubber-ducky-code`,
   MCP tools `rubber_ducky_code_*`, skill `rubber_ducky_code`.
 - **Plan review** — the reviewed artifact is a structured plan document. CLI
   `rubber-ducky-plan`, MCP tools `rubber_ducky_plan_*`, skill `rubber_ducky_plan`.
+- **ADR review** — the reviewed artifact is exact Proposed ADR Markdown plus
+  immutable evidence. CLI `rubber-ducky-adr`, five MCP tools
+  `rubber_ducky_adr_*`, skill `rubber_ducky_adr`. Reviewer responses come from
+  a separate read-only context; there is no automatic ADR generation tool.
 
-The `rubber_ducky` router skill picks the domain from the supplied artifact.
-Both domains share the same rounds, verdicts, escalation, durable audit log,
+The `rubber_ducky` router skill picks the review mode from the supplied artifact.
+All modes share the same rounds, verdicts, escalation, durable audit log,
 and reviewer configuration; only the payload differs.
 
 ## How a review works
@@ -53,19 +57,21 @@ uv tool install --editable '.[anthropic,openai,openrouter]'
 command -v rubber-ducky-mcp
 ```
 
-This installs five executables: the `rubber-ducky-code` and `rubber-ducky-plan` CLIs, and
-three MCP servers — `rubber-ducky-mcp` (both toolsets), `rubber-ducky-code-mcp`
-(code only), and `rubber-ducky-plan-mcp` (plan only). The final command prints the
+This installs seven executables: the `rubber-ducky-code`, `rubber-ducky-plan`,
+and `rubber-ducky-adr` CLIs, and four MCP servers — `rubber-ducky-mcp` (all
+toolsets), `rubber-ducky-code-mcp`, `rubber-ducky-plan-mcp`, and
+`rubber-ducky-adr-mcp`. The final command prints the
 absolute path used in the MCP client configuration below. Install only the
 provider extras you need.
 
-Install the bundled calling-agent skills (router plus both domains):
+Install the bundled calling-agent skills (router plus all review modes):
 
 ```bash
 mkdir -p ~/.agents/skills
 cp -R skill/rubber_ducky ~/.agents/skills/rubber_ducky
 cp -R skill/rubber_ducky_code ~/.agents/skills/rubber_ducky_code
 cp -R skill/rubber_ducky_plan ~/.agents/skills/rubber_ducky_plan
+cp -R skill/rubber_ducky_adr ~/.agents/skills/rubber_ducky_adr
 cp -R skill/references ~/.agents/skills/references
 ```
 
@@ -82,7 +88,7 @@ uv run rubber-ducky-code --help
 
 ## CLI
 
-Both CLIs accept Pydantic-compatible JSON from a file or stdin and share the
+The code and plan CLIs accept Pydantic-compatible JSON from a file or stdin and share the
 same subcommands and exit codes. `rubber-ducky-code` reviews a diff; `rubber-ducky-plan`
 reviews a plan document. Substitute `rubber-ducky-plan` for `rubber-ducky-code` below to
 run a plan review.
@@ -114,6 +120,11 @@ plan review it carries a structured `plan` instead:
 
 A `rubber-ducky-plan rebut` input carries `revised_plan` (a full plan document, or
 `null` when nothing changed) in place of the code domain's `revised_diff`.
+
+`rubber-ducky-adr` exposes `start`, `status`, `respond`, `rebut`, and `resume`
+only. Start requires `--evidence evidence.json`; an accepted-concern rebuttal
+requires a revised evidence file. See `skill/rubber_ducky_adr/SKILL.md` for the
+exact payload and human-acceptance boundary.
 
 Reviewer selection has no model default. Precedence is explicit CLI/MCP values,
 then `RUBBER_DUCKY_REVIEWER_PROVIDER` and `RUBBER_DUCKY_REVIEWER_MODEL`, then
@@ -186,14 +197,15 @@ without persisting an event.
 
 ## MCP
 
-The unified server `rubber-ducky-mcp` exposes both toolsets on one process: the
+The unified server `rubber-ducky-mcp` exposes all review modes on one process: the
 code tools `rubber_ducky_code_start`, `rubber_ducky_code_status`, `rubber_ducky_code_generate`,
 `rubber_ducky_code_respond`, `rubber_ducky_code_rebut`, `rubber_ducky_code_resume`, and the
 plan tools `rubber_ducky_plan_start`, `rubber_ducky_plan_status`, `rubber_ducky_plan_generate`,
-`rubber_ducky_plan_respond`, `rubber_ducky_plan_rebut`, `rubber_ducky_plan_resume`. It uses stdio;
+`rubber_ducky_plan_respond`, `rubber_ducky_plan_rebut`, `rubber_ducky_plan_resume`, and
+the five `rubber_ducky_adr_*` tools. It uses stdio;
 MCP clients start it automatically. The standalone `rubber-ducky-code-mcp` and
-`rubber-ducky-plan-mcp` servers expose only their own toolset if you prefer to
-register a single domain.
+`rubber-ducky-plan-mcp` and `rubber-ducky-adr-mcp` servers expose only their
+own toolset if you prefer to register a single review mode.
 
 Use the absolute path printed by `command -v rubber-ducky-mcp`. The examples
 below use `/absolute/path/to/rubber-ducky-mcp`. Merge each entry into an
@@ -288,13 +300,13 @@ Add this to the `mcpServers` object in
 }
 ```
 
-Restart clients that were already running, then verify that the twelve
-`rubber_ducky_code_*` and `rubber_ducky_plan_*` tools are available. A quick end-to-end
+Restart clients that were already running, then verify that all seventeen
+`rubber_ducky_code_*`, `rubber_ducky_plan_*`, and `rubber_ducky_adr_*` tools are available. A quick end-to-end
 check should start a review in a disposable workspace, generate a reviewer
 response, and query its status.
 
 Tool failures use MCP `ToolError` with a stable `TypeName: message` string, such
 as `ReviewNotFound: 'missing'` or `InvalidTransition: ...`.
 
-The bundled router skill and the two domain skills are under `skill/`; the
+The bundled router and review-mode skills are under `skill/`; the
 shared authoritative protocol is `skill/references/review-protocol.md`.

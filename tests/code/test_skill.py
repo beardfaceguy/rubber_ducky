@@ -9,14 +9,16 @@ SHARED_PROTOCOL = (
 REVIEW_LOG_ROOT = Path(__file__).parents[2] / "rubber_ducky"
 
 
-def test_router_skill_delegates_to_both_domains() -> None:
+def test_router_skill_delegates_to_all_review_modes() -> None:
     router = (ROUTER_ROOT / "SKILL.md").read_text(encoding="utf-8")
 
     assert "name: rubber_ducky" in router
     assert "rubber_ducky_code" in router
     assert "rubber_ducky_plan" in router
+    assert "rubber_ducky_adr" in router
     assert "rubber-ducky-code" in router
     assert "rubber-ducky-plan" in router
+    assert "rubber-ducky-adr" in router
 
 
 def test_skill_documents_cli_and_manual_fallback() -> None:
