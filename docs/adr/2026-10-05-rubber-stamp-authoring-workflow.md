@@ -1,13 +1,13 @@
 # Build rubber_stamp as a separate LangGraph application
 
-Status: Accepted
+Status: Superseded
 Date: 2026-10-05
 Deciders: Patrick Clawson
 Consulted: Infrastructure team; rubber_stamp and rubber_ducky project evidence
 Informed: Infrastructure team
 Spec: https://linear.app/meetalix/project/rubber-stamp-9973c4ed4dde
 Supersedes:
-Superseded by:
+Superseded by: https://github.com/meetalix/rubber_stamp/blob/main/docs/adr/2026-10-06-human-authored-adr-filing.md
 
 ## Context
 
@@ -41,6 +41,13 @@ runtime boundary should it adopt?
 - Avoid extracting a shared package before stable overlap is demonstrated.
 
 ## Decision
+
+Supersession recorded 2026-10-06: the project owner explicitly accepted the
+human-authored filing replacement in [rubber_stamp PR #6](https://github.com/meetalix/rubber_stamp/pull/6#pullrequestreview-5432200079).
+The historical decision below is retained for traceability, not authority for
+new agent-authoring implementation. The evidence-handoff and rubber_ducky ADR
+review-mode decisions remain unchanged. Existing code, transports, and journals
+are preserved pending separately reviewed retirement.
 
 We will implement rubber_stamp v1 as a separate Python application and package
 in its own `meetalix/rubber_stamp` repository.

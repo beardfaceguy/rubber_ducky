@@ -1,6 +1,6 @@
 # rubber_ducky context
 
-Date: 2026-10-05
+Date: 2026-10-06
 
 ## Vocabulary
 
@@ -19,8 +19,11 @@ Date: 2026-10-05
 - **Human acceptance** — the explicit `Accepted`, `Rejected`, or `Superseded`
   status recorded in an ADR file through GitHub review. Automated approval
   cannot create it.
-- **rubber_stamp** — the separate ADR-authoring LangGraph application. It is
-  separate from rubber_ducky's reviewer role.
+- **rubber_stamp** — the separate human-authored ADR filing application under
+  the accepted desktop pivot. The old agent-authoring workflow is Superseded;
+  existing code/journals are preserved. rubber_ducky's ADR reviewer mode remains
+  independent and unchanged. See the replacement decision in
+  `meetalix/rubber_stamp/docs/adr/2026-10-06-human-authored-adr-filing.md`.
 
 ## Where
 
