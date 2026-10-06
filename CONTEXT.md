@@ -11,7 +11,7 @@ Date: 2026-10-05
   Reviewer protocol approval is not human ADR acceptance.
 - **Review Protocol** — the domain-agnostic, three-round negotiation lifecycle
   implemented by the shared core.
-- **Reviewed-artifact domain** — the typed request, rebuttal, state, CLI, MCP,
+- **Review mode** — the typed request, rebuttal, state, CLI, MCP,
   and skill binding for one artifact kind, currently code or plan.
 - **Evidence handoff** — the immutable spec, repository revision, sources,
   findings, alternatives, artifacts, and blockers supplied to an independent
@@ -19,8 +19,8 @@ Date: 2026-10-05
 - **Human acceptance** — the explicit `Accepted`, `Rejected`, or `Superseded`
   status recorded in an ADR file through GitHub review. Automated approval
   cannot create it.
-- **rubber_stamp** — the proposed ADR-authoring workflow. It is separate from
-  rubber_ducky's reviewer role.
+- **rubber_stamp** — the separate ADR-authoring LangGraph application. It is
+  separate from rubber_ducky's reviewer role.
 
 ## Where
 
@@ -33,7 +33,7 @@ Date: 2026-10-05
   `src/rubber_ducky/core/service.py`
 - Reviewer generation boundary:
   `src/rubber_ducky/core/adapters.py`
-- Current domain bindings:
+- Current review-mode bindings:
   `src/rubber_ducky/code/` and `src/rubber_ducky/plan/`
 - Protocol guidance:
   `skill/references/review-protocol.md`

@@ -148,5 +148,5 @@ unattended execution, or a network API.
 
 ## Open questions
 
-None for this proposed decision. The evidence handoff and review-domain
+None. The evidence handoff and review-mode
 contracts are decided separately.

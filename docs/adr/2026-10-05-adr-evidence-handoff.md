@@ -159,5 +159,5 @@ different evidence-retention boundary.
 
 ## Open questions
 
-None for this proposed decision. Concrete model/module names may be refined in
+None. Concrete model/module names may be refined in
 the post-acceptance plan without changing the handoff fields or ownership.

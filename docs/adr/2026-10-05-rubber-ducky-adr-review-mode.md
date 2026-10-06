@@ -54,7 +54,7 @@ The mode will add:
 - `AdrReviewState` and `AdrReviewService`, bound to the existing shared
   protocol v1.3 reducer, persistence, checkpoints, and audit;
 - audit headings `Proposed ADR` and `Revised ADR`, with `.md` artifacts and
-  separately stored canonical `.json` evidence artifacts;
+  separately stored exact `.json` evidence artifacts;
 - CLI `rubber-ducky-adr`; and
 - MCP tools `rubber_ducky_adr_start`, `status`, `respond`, `rebut`, and
   `resume`, plus router-skill support.
@@ -162,5 +162,5 @@ automatic reviewer safe read-only source tools.
 
 ## Open questions
 
-None for this proposed decision. Concrete class/module names may be refined in
+None. Concrete class/module names may be refined in
 the accepted plan while preserving the review-mode and public-interface boundary.

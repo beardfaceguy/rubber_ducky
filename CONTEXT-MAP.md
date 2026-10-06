@@ -4,8 +4,9 @@ Date: 2026-10-05
 
 - Review protocol vocabulary and ownership boundaries: [`CONTEXT.md`](CONTEXT.md)
 - Consequential decisions: [`docs/adr/`](docs/adr/)
+- Implementation plans: [`docs/plans/`](docs/plans/)
 - Shared protocol implementation: `src/rubber_ducky/core/`
-- Reviewed-artifact domains: `src/rubber_ducky/code/` and
+- Review modes: `src/rubber_ducky/code/` and
   `src/rubber_ducky/plan/`
 - Calling-agent workflow guidance: `skill/`
 
