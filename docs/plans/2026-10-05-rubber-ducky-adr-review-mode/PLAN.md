@@ -1,6 +1,6 @@
 # PLAN — rubber_ducky ADR review mode
 
-Status: Approved
+Status: Draft
 Date: 2026-10-05
 Spec: https://linear.app/meetalix/project/rubber-ducky-alix-port-4201a2d28a3c
 ADRs: 2026-10-05-rubber-ducky-adr-review-mode, 2026-10-05-adr-evidence-handoff (accepted)
