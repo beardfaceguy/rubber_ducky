@@ -298,3 +298,7 @@ as `ReviewNotFound: 'missing'` or `InvalidTransition: ...`.
 
 The bundled router skill and the two domain skills are under `skill/`; the
 shared authoritative protocol is `skill/references/review-protocol.md`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
