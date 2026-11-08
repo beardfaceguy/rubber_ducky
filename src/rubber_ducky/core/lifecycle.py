@@ -162,6 +162,20 @@ def apply_review_response(
                 "review response must address every point from the prior rebuttal: "
                 f"expected {expected_point_ids}, got {addressed_point_ids}"
             )
+        rebutted_concern_ids = {
+            disposition.concern_id
+            for disposition in state.rebuttals[-1].blocking_responses
+        }
+        unknown_concern_ids = tuple(
+            prior_response.concern_id
+            for prior_response in response.prior_concern_responses
+            if prior_response.concern_id not in rebutted_concern_ids
+        )
+        if unknown_concern_ids:
+            raise InvalidTransition(
+                "prior_concern_responses may answer only concerns the prior "
+                f"rebuttal addressed: {unknown_concern_ids}"
+            )
 
     _validate_new_concern_ids(state, response)
 

@@ -10,6 +10,7 @@ from rubber_ducky.core.models import (
     EscalationConcern,
     EscalationSummary,
     Position,
+    PriorConcernResponse,
     PriorPointResponse,
     RebuttalPoint,
     RebuttalRequest,
@@ -94,6 +95,47 @@ def test_round_one_response_rejects_prior_point_responses() -> None:
             ),
             verdict=Verdict.APPROVE,
         )
+
+
+def test_round_one_response_rejects_prior_concern_responses() -> None:
+    with pytest.raises(ValidationError, match="prior concern dispositions"):
+        ReviewResponse(
+            round=1,
+            position=Position.AGREE,
+            prior_concern_responses=(
+                PriorConcernResponse(concern_id="B1", response="Still holds."),
+            ),
+            verdict=Verdict.APPROVE,
+        )
+
+
+@pytest.mark.parametrize(
+    ("concern_ids", "message"),
+    [
+        (("B1", "B1"), "answered only once"),
+        (("B2", "B1"), "monotonically increasing"),
+    ],
+)
+def test_prior_concern_responses_are_unique_and_ordered(
+    concern_ids: tuple[str, ...], message: str
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        ReviewResponse(
+            round=2,
+            position=Position.DISAGREE,
+            prior_concern_responses=tuple(
+                PriorConcernResponse(concern_id=concern_id, response="Reply.")
+                for concern_id in concern_ids
+            ),
+            verdict=Verdict.REVISE,
+        )
+
+
+def test_prior_concern_response_requires_blocking_id_and_text() -> None:
+    with pytest.raises(ValidationError):
+        PriorConcernResponse(concern_id="S1", response="Reply.")
+    with pytest.raises(ValidationError):
+        PriorConcernResponse(concern_id="B1", response="   ")
 
 
 def test_round_one_response_cannot_resolve_concerns() -> None:

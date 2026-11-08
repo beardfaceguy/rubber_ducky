@@ -1,14 +1,18 @@
 """Durable application service coordinating journal, audit, and workflow."""
 
+import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cached_property
+from hashlib import sha256
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from langgraph.types import Command
+from pydantic import BaseModel
 
-from rubber_ducky.core.adapters import ReviewerAdapter
+from rubber_ducky.core.adapters import RejectedGeneration, ReviewerAdapter
 from rubber_ducky.core.audit import ArtifactConflict, AuditIdentityConflict, AuditLog
 from rubber_ducky.core.lifecycle import ReviewEvent, ReviewState, replay_review
 from rubber_ducky.core.models import RebuttalBase, ReviewRequestBase
@@ -195,7 +199,17 @@ class ReviewService:
             config,
             environment=environment,
         )
-        generated = ReviewerAdapter(model).review_with_diagnostics(state)
+        generated = ReviewerAdapter(
+            model,
+            on_rejected=lambda rejected: self._store_rejected_generation(
+                thread_id,
+                history,
+                event_id,
+                len(state.responses) + 1,
+                rejected,
+                config_metadata,
+            ),
+        ).review_with_diagnostics(state)
         metadata = {
             **config_metadata,
             "validation_attempts": str(generated.attempts),
@@ -210,6 +224,39 @@ class ReviewService:
             generated.response,
             metadata=metadata,
         )
+
+    def _store_rejected_generation(
+        self,
+        thread_id: str,
+        history: StoredReview,
+        event_id: str,
+        round_number: int,
+        rejected: RejectedGeneration,
+        config_metadata: Mapping[str, str],
+    ) -> None:
+        """Keep the reviewer's last rejected output inspectable.
+
+        The output is stored exactly as the model returned it, as a private
+        audit artifact. It never enters the journal or canonical state. The
+        content digest is part of the name, so retries of the same event ID
+        add new evidence instead of conflicting with earlier rejections.
+        """
+
+        payload = {
+            "event_id": event_id,
+            "thread_id": thread_id,
+            "round": round_number,
+            "attempts": rejected.attempts,
+            "validation_errors": list(rejected.validation_errors),
+            "reviewer": dict(config_metadata),
+            "rejected_response": _jsonable(rejected.response),
+        }
+        content = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+        safe_event_id = re.sub(r"[^A-Za-z0-9._-]", "_", event_id)[:120]
+        name = (
+            f"rejected-review-{safe_event_id}-{sha256(content).hexdigest()[:12]}.json"
+        )
+        self._open_audit(thread_id, history).store_artifact(name, content)
 
     def _open_audit(self, thread_id: str, history: StoredReview) -> AuditLog:
         if history.audit_slug is None:
@@ -270,3 +317,14 @@ class ReviewService:
                 raise PersistenceConflict(
                     "checkpoint did not converge to canonical journal"
                 )
+
+
+def _jsonable(value: object) -> Any:
+    """Return a JSON-compatible view of raw model output without repairing it."""
+
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
+    try:
+        return json.loads(json.dumps(value))
+    except (TypeError, ValueError):
+        return repr(value)

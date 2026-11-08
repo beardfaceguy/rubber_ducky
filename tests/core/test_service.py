@@ -1,10 +1,11 @@
+import json
 from pathlib import Path
 
 import pytest
 from langchain_core.runnables import RunnableLambda
 
 from rubber_ducky.core.audit import AuditLog
-from rubber_ducky.core.lifecycle import ReviewStatus
+from rubber_ducky.core.lifecycle import InvalidTransition, ReviewStatus
 from rubber_ducky.code.models import ReviewRequest
 from rubber_ducky.code.service import CodeReviewService
 from rubber_ducky.core.models import ReviewResponse
@@ -62,6 +63,66 @@ class RetryingReviewerModel(FakeReviewerModel):
             "position": "AGREE",
             "verdict": "APPROVE",
         }
+
+
+class AlwaysInvalidReviewerModel(FakeReviewerModel):
+    def _respond(self, _messages):
+        self.calls += 1
+        return {
+            "round": 1,
+            "position": "AGREE",
+            "blocking_concerns": [
+                {"id": "B2", "kind": "blocking", "text": "Skips B1."}
+            ],
+            "verdict": "REVISE",
+        }
+
+
+def test_service_saves_rejected_generation_when_attempts_are_spent(
+    tmp_path: Path,
+) -> None:
+    service = CodeReviewService(tmp_path)
+    service.start("review-1", "application-service", make_request())
+    config = ReviewerModelConfig(provider="local", model="offline-reviewer")
+    model = AlwaysInvalidReviewerModel()
+    factory = ReviewerModelFactory(
+        {
+            "local": ProviderDefinition(
+                lambda _config, _credential: model,
+                requires_credential=False,
+            )
+        }
+    )
+
+    with pytest.raises(InvalidTransition, match="expected new B IDs"):
+        service.generate_review(
+            "review-1", "event:1", config, factory=factory, environment={}
+        )
+    # A retry of the same event ID keeps the earlier evidence.
+    with pytest.raises(InvalidTransition):
+        service.generate_review(
+            "review-1", "event:1", config, factory=factory, environment={}
+        )
+
+    artifacts = sorted(
+        (tmp_path / "rubber_ducky" / "AR-7-application-service" / "artifacts").glob(
+            "rejected-review-event_1-*.json"
+        )
+    )
+    assert len(artifacts) == 1  # identical rejections share one artifact
+    saved = json.loads(artifacts[0].read_text(encoding="utf-8"))
+    assert saved["event_id"] == "event:1"
+    assert saved["round"] == 1
+    assert saved["attempts"] == 2
+    assert saved["rejected_response"]["blocking_concerns"][0]["id"] == "B2"
+    assert "expected new B IDs ('B1',), got ('B2',)" in saved[
+        "validation_errors"
+    ][0]
+    assert saved["reviewer"]["model"] == "offline-reviewer"
+    assert service.store.load_history("review-1").events == ()
+    assert service.status("review-1").status is (
+        ReviewStatus.AWAITING_REVIEW_RESPONSE
+    )
 
 
 def test_service_starts_durable_review_and_audit(tmp_path: Path) -> None:

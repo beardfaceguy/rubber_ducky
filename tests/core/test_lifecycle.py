@@ -20,6 +20,7 @@ from rubber_ducky.core.models import (
     EscalationConcern,
     EscalationSummary,
     Position,
+    PriorConcernResponse,
     PriorPointResponse,
     RebuttalPoint,
     RebuttalRequest,
@@ -421,6 +422,51 @@ def test_resolving_last_blocker_allows_approval() -> None:
 
     assert completed.status is ReviewStatus.APPROVED
     assert completed.open_blocking_concerns == ()
+
+
+def test_reviewer_can_answer_dispute_while_keeping_concern_open() -> None:
+    reply = PriorConcernResponse(
+        concern_id="B1",
+        response="The upstream guard does not cover the retry path.",
+    )
+
+    state = apply_review_response(
+        await_second_response(),
+        ReviewResponse(
+            round=2,
+            position=Position.DISAGREE,
+            prior_concern_responses=(reply,),
+            verdict=Verdict.REVISE,
+        ),
+    )
+
+    assert state.status is ReviewStatus.AWAITING_REBUTTAL
+    assert [concern.id for concern in state.open_blocking_concerns] == ["B1"]
+    assert state.responses[-1].prior_concern_responses == (reply,)
+
+
+def test_prior_concern_responses_must_reference_rebutted_concerns() -> None:
+    with pytest.raises(InvalidTransition, match=r"prior rebuttal addressed: \('B2',\)"):
+        apply_review_response(
+            await_second_response(),
+            ReviewResponse(
+                round=2,
+                position=Position.DISAGREE,
+                prior_concern_responses=(
+                    PriorConcernResponse(concern_id="B2", response="Unknown."),
+                ),
+                verdict=Verdict.REVISE,
+            ),
+        )
+
+
+def test_lifecycle_keeps_prior_concern_responses_optional_for_replay() -> None:
+    state = apply_review_response(
+        await_second_response(),
+        ReviewResponse(round=2, position=Position.DISAGREE, verdict=Verdict.REVISE),
+    )
+
+    assert [concern.id for concern in state.open_blocking_concerns] == ["B1"]
 
 
 def test_response_must_address_every_prior_rebuttal_point() -> None:

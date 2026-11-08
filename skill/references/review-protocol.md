@@ -122,9 +122,14 @@ matters. If none: "None.">
 If none: "None.">
 
 ### Responses to Prior Points
-<Only in rounds 2+. Address each of the worker's rebuttal points BY NUMBER
-(e.g., "Re R1: ..."). Do not paraphrase or skip any. Explicitly mark previously
-raised blocking concerns as resolved when appropriate (e.g., "B2: resolved").>
+<Only in rounds 2+. Answer the worker's disposition reasons BY CONCERN ID
+(e.g., "Re B1: ..."): every DISPUTE or CLARIFY on a concern you keep open needs
+a reply saying why the worker's reason does not resolve it. Then address each
+of the worker's rebuttal points BY NUMBER (e.g., "Re R1: ..."). Do not
+paraphrase or skip any. Explicitly mark previously raised blocking concerns as
+resolved when appropriate (e.g., "B2: resolved"). A "Re B<n>" reply never
+resolves a concern by itself, and a concern kept open is not listed again
+under Blocking Concerns.>
 
 **Verdict:** APPROVE | REVISE | ESCALATE
 ```

@@ -190,10 +190,15 @@ The attribution headers are optional and must identify your own application.
 conventional OpenRouter name instead, set `api_key_env` to
 `OPENROUTER_API_KEY`. Do not put either credential value in `options`.
 
-Reviewer output that fails protocol schema validation receives one corrective
-retry. A successful retry records its attempt count and redacted validation
-diagnostics in the durable audit; a second invalid response fails closed
-without persisting an event.
+Reviewer output must pass both the protocol schema and the lifecycle
+transition for the current state (for example, new concern IDs continuing the
+conversation-wide B/S sequence). A failure of either kind receives one
+corrective retry with the error fed back to the model. A successful retry
+records its attempt count and redacted validation diagnostics in the durable
+audit; a second invalid response fails closed without persisting an event. The
+last rejected output and its diagnostics are kept, unrepaired, as
+`rubber_ducky/<task>-<slug>/artifacts/rejected-review-<event-id>-<digest>.json`
+so the reviewer's position can be inspected.
 
 ## MCP
 

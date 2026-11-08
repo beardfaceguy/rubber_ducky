@@ -89,6 +89,10 @@ def _render_concerns(concerns: tuple[Concern, ...]) -> str:
 def _render_response(response: ReviewResponse) -> str:
     prior_lines = [
         *(
+            f"Re {prior.concern_id}: {prior.response}"
+            for prior in response.prior_concern_responses
+        ),
+        *(
             f"Re {prior.point_id}: {prior.response}"
             for prior in response.prior_point_responses
         ),
