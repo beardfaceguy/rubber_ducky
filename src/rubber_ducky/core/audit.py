@@ -25,6 +25,7 @@ _TASK_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 _SLUG_PATTERN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _EVENT_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,254}")
 _METADATA_KEY_PATTERN = re.compile(r"[a-z][a-z0-9_.-]{0,63}")
+_ARTIFACT_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,254}")
 _LOG_HEADER = "# Agent Review Log\n**Protocol:** review-protocol.md v1.3\n"
 
 
@@ -87,6 +88,10 @@ def _render_concerns(concerns: tuple[Concern, ...]) -> str:
 
 def _render_response(response: ReviewResponse) -> str:
     prior_lines = [
+        *(
+            f"Re {prior.concern_id}: {prior.response}"
+            for prior in response.prior_concern_responses
+        ),
         *(
             f"Re {prior.point_id}: {prior.response}"
             for prior in response.prior_point_responses
@@ -276,44 +281,18 @@ class AuditLog:
     ) -> ArtifactEvidence | None:
         """Append one protocol message and return its artifact evidence."""
 
-        if event_id is not None:
-            safe_event_id = _validate_component(
-                event_id,
-                _EVENT_ID_PATTERN,
-                "event ID",
-            )
-        else:
-            safe_event_id = None
-
-        if isinstance(event, ReviewResponse):
-            metadata = self._metadata(
-                safe_event_id,
-                audit_metadata=audit_metadata,
-            )
-            self._append_text(f"\n{metadata}{_render_response(event)}")
-            return None
-        if isinstance(event, EscalationSummary):
-            metadata = self._metadata(
-                safe_event_id,
-                audit_metadata=audit_metadata,
-            )
-            self._append_text(f"\n{metadata}{_render_escalation(event)}")
-            return None
-
         if isinstance(event, RebuttalBase):
             artifact_name = (
                 f"round-{event.round}-rebuttal.{event.revised_artifact_suffix()}"
             )
             artifact_text = event.revised_text()
-            rendered_event = _render_rebuttal(event)
             if event.is_unchanged():
-                metadata = self._metadata(
-                    safe_event_id,
+                return self.append_prepared(
+                    event,
+                    event_id=event_id,
                     audit_metadata=audit_metadata,
                 )
-                self._append_text(f"\n{metadata}{rendered_event}")
-                return None
-        else:
+        elif isinstance(event, ReviewRequestBase):
             if event.task_id != self.task_id:
                 raise ValueError(
                     f"request task {event.task_id!r} does not match audit task "
@@ -321,36 +300,92 @@ class AuditLog:
                 )
             artifact_name = f"round-1-review-request.{event.artifact_suffix()}"
             artifact_text = event.payload_text()
-            rendered_event = _render_request(event)
+        else:
+            return self.append_prepared(
+                event,
+                event_id=event_id,
+                audit_metadata=audit_metadata,
+            )
 
-        artifact_path = self.artifacts_dir / artifact_name
         artifact_bytes = artifact_text.encode("utf-8", errors="strict")
+        evidence, artifact_created = self._store_artifact(artifact_name, artifact_bytes)
+        try:
+            return self.append_prepared(
+                event,
+                event_id=event_id,
+                evidence=evidence,
+                audit_metadata=audit_metadata,
+            )
+        except Exception:
+            if artifact_created:
+                (self.log_path.parent / evidence.relative_path).unlink(missing_ok=True)
+            raise
+
+    def store_artifact(self, name: str, content: bytes) -> ArtifactEvidence:
+        """Store exact artifact bytes without appending an audit message."""
+
+        evidence, _created = self._store_artifact(name, content)
+        return evidence
+
+    def _store_artifact(
+        self,
+        name: str,
+        content: bytes,
+    ) -> tuple[ArtifactEvidence, bool]:
+        safe_name = _validate_component(name, _ARTIFACT_NAME_PATTERN, "artifact name")
+        artifact_path = self.artifacts_dir / safe_name
         artifact_created = False
         try:
             with artifact_path.open("xb") as artifact_file:
-                artifact_file.write(artifact_bytes)
+                artifact_file.write(content)
                 artifact_created = True
         except FileExistsError as error:
-            if artifact_path.read_bytes() != artifact_bytes:
+            if artifact_path.read_bytes() != content:
                 raise ArtifactConflict(
                     f"artifact {artifact_path.name!r} already exists with different bytes"
                 ) from error
+        return (
+            ArtifactEvidence(
+                relative_path=artifact_path.relative_to(
+                    self.log_path.parent
+                ).as_posix(),
+                sha256=sha256(content).hexdigest(),
+            ),
+            artifact_created,
+        )
 
-        evidence = ArtifactEvidence(
-            relative_path=artifact_path.relative_to(self.log_path.parent).as_posix(),
-            sha256=sha256(artifact_bytes).hexdigest(),
+    def append_prepared(
+        self,
+        event: ReviewRequestBase | ReviewResponse | RebuttalBase | EscalationSummary,
+        *,
+        event_id: str | None = None,
+        evidence: ArtifactEvidence | None = None,
+        audit_metadata: Mapping[str, str] | None = None,
+    ) -> ArtifactEvidence | None:
+        """Append a protocol message for an artifact stored by the caller."""
+
+        safe_event_id = (
+            _validate_component(event_id, _EVENT_ID_PATTERN, "event ID")
+            if event_id is not None
+            else None
         )
-        metadata = self._metadata(
-            safe_event_id,
-            evidence,
-            audit_metadata,
-        )
-        try:
-            self._append_text(f"\n{metadata}{rendered_event}")
-        except Exception:
-            if artifact_created:
-                artifact_path.unlink(missing_ok=True)
-            raise
+        if isinstance(event, ReviewRequestBase):
+            if event.task_id != self.task_id:
+                raise ValueError(
+                    f"request task {event.task_id!r} does not match audit task "
+                    f"{self.task_id!r}"
+                )
+            rendered_event = _render_request(event)
+        elif isinstance(event, ReviewResponse):
+            rendered_event = _render_response(event)
+        elif isinstance(event, RebuttalBase):
+            rendered_event = _render_rebuttal(event)
+        elif isinstance(event, EscalationSummary):
+            rendered_event = _render_escalation(event)
+        else:
+            raise TypeError(f"unsupported audit event: {type(event).__name__}")
+        metadata = self._metadata(safe_event_id, evidence, audit_metadata)
+        self._append_text(f"\n{metadata}{rendered_event}")
         return evidence
 
     @staticmethod

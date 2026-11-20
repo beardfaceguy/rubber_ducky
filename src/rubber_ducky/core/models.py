@@ -80,6 +80,17 @@ class PriorPointResponse(ProtocolModel):
     response: NonEmptyText
 
 
+class PriorConcernResponse(ProtocolModel):
+    """A reviewer reply to the worker's disposition of one blocking concern.
+
+    It answers the worker's ACCEPT, DISPUTE, or CLARIFY reason. Whether the
+    concern stays open is decided only by ``resolved_concern_ids``.
+    """
+
+    concern_id: Annotated[str, Field(pattern=r"^B[1-9][0-9]*$")]
+    response: NonEmptyText
+
+
 class BlockingConcernResponse(ProtocolModel):
     """A worker's disposition and reasoning for one blocking concern."""
 
@@ -171,6 +182,9 @@ class ReviewResponse(ProtocolModel):
     resolved_concern_ids: tuple[
         Annotated[str, Field(pattern=r"^B[1-9][0-9]*$")], ...
     ] = Field(default_factory=tuple)
+    prior_concern_responses: tuple[PriorConcernResponse, ...] = Field(
+        default_factory=tuple
+    )
     prior_point_responses: tuple[PriorPointResponse, ...] = Field(default_factory=tuple)
     verdict: Verdict
 
@@ -189,6 +203,19 @@ class ReviewResponse(ProtocolModel):
             raise ValueError("round-one responses cannot address prior rebuttal points")
         if self.round == 1 and self.resolved_concern_ids:
             raise ValueError("round-one responses cannot resolve prior concerns")
+        if self.round == 1 and self.prior_concern_responses:
+            raise ValueError(
+                "round-one responses cannot answer prior concern dispositions"
+            )
+        prior_concern_ids = [
+            response.concern_id for response in self.prior_concern_responses
+        ]
+        if len(prior_concern_ids) != len(set(prior_concern_ids)):
+            raise ValueError("each prior concern disposition may be answered only once")
+        if not _numbers_are_increasing(prior_concern_ids):
+            raise ValueError(
+                "prior concern IDs must be in monotonically increasing order"
+            )
         prior_point_ids = [response.point_id for response in self.prior_point_responses]
         if len(prior_point_ids) != len(set(prior_point_ids)):
             raise ValueError("each rebuttal point may be answered only once")

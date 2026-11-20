@@ -1,6 +1,6 @@
 ---
 name: rubber_ducky
-description: route an agent-to-agent review request to code or plan review
+description: route an agent-to-agent review request by artifact type
 disable-model-invocation: false
 ---
 
@@ -8,22 +8,27 @@ disable-model-invocation: false
 
 Rubber Ducky runs formal, durable agent-to-agent reviews using one shared
 round-based protocol (reviewer responses, worker rebuttals, up to three rounds,
-then human escalation). It reviews two kinds of artifact, each with its own
+then human escalation). It reviews three kinds of artifact, each with its own
 skill. This skill only routes; it performs no review itself.
 
-## Choose the domain
+## Choose the review mode
 
 - **Code or a diff** — an actual patch, changed files, or code under review →
   use **`rubber_ducky_code`**. The reviewed payload is the real diff.
 - **A proposed plan or design** — an objective with ordered steps and
   acceptance criteria, not yet implemented → use **`rubber_ducky_plan`**. The
   reviewed payload is a structured plan document.
+- **A Proposed company ADR** — exact ADR Markdown plus an immutable evidence
+  JSON artifact → use **`rubber_ducky_adr`**. The reviewer response must come
+  from a separate read-only context; this mode has no automatic generation.
 
 Decide by the artifact the caller supplies, not by the task's subject:
 
 - If the caller hands you code/diff text, route to `rubber_ducky_code`.
 - If the caller hands you a plan (objective + steps + acceptance), route to
   `rubber_ducky_plan`.
+- If the caller hands you Proposed ADR Markdown and its evidence handoff, route
+  to `rubber_ducky_adr`.
 - If both are present, review the plan first (`rubber_ducky_plan`), then the
   implementing diff (`rubber_ducky_code`) as a separate review.
 - If the artifact is ambiguous, ask the operator which one they want reviewed
@@ -31,7 +36,7 @@ Decide by the artifact the caller supplies, not by the task's subject:
 
 ## After routing
 
-Read the chosen skill's `SKILL.md` and follow it. The two domains share:
+Read the chosen skill's `SKILL.md` and follow it. The review modes share:
 
 - the same protocol semantics (roles, IDs `B*`/`S*`/`R*`, verdicts APPROVE /
   REVISE / ESCALATE, the three-round limit, and escalation to the human);
@@ -45,5 +50,8 @@ They differ only in the tool surface:
   payload is a diff.
 - `rubber_ducky_plan` → the `rubber-ducky-plan` CLI and `rubber_ducky_plan_*` MCP tools;
   payload is a plan document.
+- `rubber_ducky_adr` → the `rubber-ducky-adr` CLI and five
+  `rubber_ducky_adr_*` MCP tools; payload is exact ADR/evidence bytes and there
+  is no `generate` operation.
 
-Do not mix the two tool surfaces within a single review conversation.
+Do not mix tool surfaces within a single review conversation.

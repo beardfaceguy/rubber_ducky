@@ -13,6 +13,7 @@ from rubber_ducky.core.models import (
     EscalationConcern,
     EscalationSummary,
     Position,
+    PriorConcernResponse,
     PriorPointResponse,
     RebuttalPoint,
     RebuttalRequest,
@@ -210,6 +211,9 @@ def test_append_response_renders_protocol_sections_without_artifact(
             Concern(id="S1", kind=ConcernKind.SUGGESTION, text="Optional cleanup."),
         ),
         resolved_concern_ids=("B1",),
+        prior_concern_responses=(
+            PriorConcernResponse(concern_id="B1", response="The fix is verified."),
+        ),
         prior_point_responses=(
             PriorPointResponse(point_id="R1", response="The evidence was sufficient."),
         ),
@@ -224,6 +228,7 @@ def test_append_response_renders_protocol_sections_without_artifact(
     assert "B2. New blocker." in log
     assert "S1. Optional cleanup." in log
     assert "Re R1: The evidence was sufficient." in log
+    assert "Re B1: The fix is verified." in log
     assert "B1: resolved" in log
     assert "<!-- artifact " not in log
 
@@ -343,3 +348,23 @@ def test_append_escalation_summary_renders_operator_decision(tmp_path: Path) -> 
     assert "**Worker's final position:** The implementation is safe." in log
     assert "**Reviewer's final position:** The blockers remain." in log
     assert "**Decision needed from operator:** Should implementation continue?" in log
+
+
+def test_append_prepared_projects_preexisting_artifact(tmp_path: Path) -> None:
+    audit = AuditLog.create(tmp_path, task_id="AR-3", slug="audit-logging")
+    request = ReviewRequest(
+        task_id="AR-3",
+        title="Add audit logging",
+        proposed_solution="Project prepared artifacts.",
+        relevant_diff="+prepared = True",
+    )
+    evidence = audit.store_artifact("prepared.diff", request.relevant_diff.encode())
+
+    projected = audit.append_prepared(request, event_id="request", evidence=evidence)
+
+    assert projected == evidence
+    assert (audit.artifacts_dir / "prepared.diff").read_text() == request.relevant_diff
+    assert list(audit.artifacts_dir.iterdir()) == [audit.artifacts_dir / "prepared.diff"]
+    assert 'artifact path="AR-3-audit-logging/artifacts/prepared.diff"' in (
+        audit.log_path.read_text()
+    )
