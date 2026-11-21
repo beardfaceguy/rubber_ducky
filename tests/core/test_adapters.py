@@ -777,3 +777,129 @@ def test_worker_rejects_wrong_status_before_model_call() -> None:
         )
 
     assert model.inputs == []
+
+
+def _human_message(model: FakeStructuredModel) -> str:
+    content = model.inputs[0][-1].content
+    assert isinstance(content, str)
+    return content
+
+
+def test_reviewer_prompt_briefs_round_one() -> None:
+    model = FakeStructuredModel({"round": 1, "position": "AGREE", "verdict": "APPROVE"})
+
+    ReviewerAdapter(model).review(start_review(make_request()))
+
+    briefing = _human_message(model)
+    assert "This is review round 1 of 3." in briefing
+    assert "There are no open blocking concerns." in briefing
+    assert "A new blocking concern you raise in this response is B1" in briefing
+    assert "a new suggestion is S1" in briefing
+    assert "prior_point_responses" not in briefing
+
+
+def test_reviewer_prompt_briefs_round_two_with_exact_ids() -> None:
+    model = FakeStructuredModel([_ROUND_TWO_KEEPS_CONCERN_OPEN])
+
+    ReviewerAdapter(model).review(_round_two_state_with_disputed_concern())
+
+    briefing = _human_message(model)
+    assert "This is review round 2 of 3." in briefing
+    assert "final round" not in briefing
+    assert "Open blocking concerns: B1, B2, B3." in briefing
+    assert "A new blocking concern you raise in this response is B4" in briefing
+    assert "a new suggestion is S1" in briefing
+    assert "prior_point_responses must answer exactly: R1, R2." in briefing
+    assert "The worker disputed or clarified: B1." in briefing
+    # The briefing comes before the state dump, so it is read first.
+    round_at = briefing.index("This is review round 2 of 3.")
+    assert round_at < briefing.index('"responses"')
+
+
+def test_reviewer_prompt_marks_round_three_as_final() -> None:
+    round_two = _round_two_state_with_disputed_concern()
+    state = replay_review(
+        make_request(),
+        (
+            *round_two.responses,
+            *round_two.rebuttals[:1],
+            ReviewResponse(
+                round=2,
+                position="PARTIAL",
+                suggestions=(
+                    Concern(id="S1", kind=ConcernKind.SUGGESTION, text="Rename it."),
+                ),
+                resolved_concern_ids=("B2", "B3"),
+                prior_concern_responses=(
+                    {"concern_id": "B1", "response": "Still unguarded."},
+                ),
+                prior_point_responses=(
+                    {"point_id": "R1", "response": "Noted."},
+                    {"point_id": "R2", "response": "Noted."},
+                ),
+                verdict="REVISE",
+            ),
+            Rebuttal(
+                round=2,
+                position="DISAGREE",
+                blocking_responses=(
+                    BlockingConcernResponse(
+                        concern_id="B1",
+                        disposition=Disposition.CLARIFY,
+                        reason="The guard runs before retries.",
+                    ),
+                ),
+                new_points=(RebuttalPoint(id="R3", text="See retry.py line 40."),),
+                revised_diff="Unchanged — see Review Request.",
+                requesting=RebuttalRequest.RE_REVIEW,
+            ),
+        ),
+    )
+    model = FakeStructuredModel(
+        {
+            "round": 3,
+            "position": "AGREE",
+            "resolved_concern_ids": ["B1"],
+            "prior_point_responses": [{"point_id": "R3", "response": "Confirmed."}],
+            "verdict": "APPROVE",
+        }
+    )
+
+    ReviewerAdapter(model).review(state)
+
+    briefing = _human_message(model)
+    assert "This is review round 3 of 3, the final round." in briefing
+    assert "Open blocking concerns: B1." in briefing
+    assert "A new blocking concern you raise in this response is B4" in briefing
+    assert "a new suggestion is S2" in briefing
+    assert "prior_point_responses must answer exactly: R3." in briefing
+    assert "The worker disputed or clarified: B1." in briefing
+
+
+def test_worker_prompt_has_no_reviewer_briefing() -> None:
+    state = apply_review_response(
+        start_review(make_request()),
+        ReviewResponse(
+            round=1,
+            position="PARTIAL",
+            blocking_concerns=(
+                Concern(id="B1", kind=ConcernKind.BLOCKING, text="Blocked."),
+            ),
+            verdict="REVISE",
+        ),
+    )
+    model = FakeStructuredModel(
+        {
+            "round": 1,
+            "position": "DISAGREE",
+            "blocking_responses": [
+                {"concern_id": "B1", "disposition": "DISPUTE", "reason": "Handled."}
+            ],
+            "revised_diff": "Unchanged — see Review Request.",
+            "requesting": "RE-REVIEW",
+        }
+    )
+
+    WorkerAdapter(model, rebuttal_schema=Rebuttal).respond(state)
+
+    assert "This is review round" not in _human_message(model)

@@ -89,6 +89,26 @@ class InvalidTransition(ValueError):
 ReviewEvent = ReviewResponse | RebuttalBase | EscalationSummary
 
 
+def next_concern_number(state: ReviewState, prefix: str) -> int:
+    """Return the number of the next new ``B`` or ``S`` concern in ``state``.
+
+    Concern IDs form one conversation-wide sequence per prefix, so the next
+    number is one more than every concern of that kind raised so far.
+    """
+
+    if prefix not in ("B", "S"):
+        raise ValueError(f"unknown concern prefix: {prefix!r}")
+    raised = sum(
+        len(
+            prior_response.blocking_concerns
+            if prefix == "B"
+            else prior_response.suggestions
+        )
+        for prior_response in state.responses
+    )
+    return raised + 1
+
+
 def _validate_new_concern_ids(
     state: ReviewState,
     response: ReviewResponse,
@@ -97,16 +117,7 @@ def _validate_new_concern_ids(
         ("B", response.blocking_concerns),
         ("S", response.suggestions),
     ):
-        seen_ids = [
-            concern.id
-            for prior_response in state.responses
-            for concern in (
-                prior_response.blocking_concerns
-                if prefix == "B"
-                else prior_response.suggestions
-            )
-        ]
-        first_expected = len(seen_ids) + 1
+        first_expected = next_concern_number(state, prefix)
         expected_ids = tuple(
             f"{prefix}{number}"
             for number in range(first_expected, first_expected + len(new_concerns))
