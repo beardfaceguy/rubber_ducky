@@ -13,6 +13,7 @@ from rubber_ducky.core.lifecycle import (
     ReviewState,
     ReviewStatus,
     apply_event,
+    next_concern_number,
 )
 from rubber_ducky.core.models import (
     UNCHANGED,
@@ -144,11 +145,71 @@ def _validation_diagnostic(error: ValidationError) -> str:
     return "; ".join(entries)[:2000]
 
 
+_MAX_REVIEW_ROUNDS = 3
+
+
+def _reviewer_turn_briefing(state: ReviewState) -> str:
+    """State this turn's round and exact IDs, so the reviewer need not derive them.
+
+    The canonical state dump holds all of this, but models misread it: they
+    re-list open concerns or restart ID sequences. Stating the round, the
+    open concerns and the next free IDs in plain words prevents that.
+    """
+
+    round_number = len(state.responses) + 1
+    lines = [
+        "Turn briefing:",
+        (
+            f"- This is review round {round_number} of {_MAX_REVIEW_ROUNDS}"
+            + (
+                ", the final round. Blocking concerns still open after it go to "
+                "the human operator."
+                if round_number == _MAX_REVIEW_ROUNDS
+                else "."
+            )
+        ),
+    ]
+    open_ids = [concern.id for concern in state.open_blocking_concerns]
+    lines.append(
+        f"- Open blocking concerns: {', '.join(open_ids)}. They stay open unless "
+        "listed in resolved_concern_ids; do not list them in blocking_concerns."
+        if open_ids
+        else "- There are no open blocking concerns."
+    )
+    lines.append(
+        "- A new blocking concern you raise in this response is "
+        f"B{next_concern_number(state, 'B')}, and a new suggestion is "
+        f"S{next_concern_number(state, 'S')}. Number any further ones upward "
+        "from there."
+    )
+    if state.rebuttals:
+        latest = state.rebuttals[-1]
+        point_ids = [point.id for point in latest.new_points]
+        lines.append(
+            f"- prior_point_responses must answer exactly: {', '.join(point_ids)}."
+            if point_ids
+            else "- The latest rebuttal raised no R points; leave "
+            "prior_point_responses empty."
+        )
+        contested_ids = [
+            reply.concern_id
+            for reply in latest.blocking_responses
+            if reply.disposition is not Disposition.ACCEPT
+        ]
+        if contested_ids:
+            lines.append(
+                f"- The worker disputed or clarified: {', '.join(contested_ids)}. "
+                "Each of these you keep open needs a prior_concern_responses entry."
+            )
+    return "\n".join(lines) + "\n\n"
+
+
 def _participant_messages(
     role: str,
     state: ReviewState,
     evidence_instruction: str = "",
     role_rules: str = "",
+    turn_briefing: str = "",
 ) -> list[BaseMessage]:
     return [
         SystemMessage(
@@ -161,6 +222,7 @@ def _participant_messages(
         ),
         HumanMessage(
             content=(
+                f"{turn_briefing}"
                 "Produce the next protocol event for this canonical review state:\n"
                 f"{state.model_dump_json(indent=2)}"
                 f"{evidence_instruction}"
@@ -217,6 +279,7 @@ class ReviewerAdapter:
                         state,
                         correction,
                         role_rules=_REVIEWER_FIELD_RULES,
+                        turn_briefing=_reviewer_turn_briefing(state),
                     )
                 )
                 structured_response = response_schema.model_validate(raw_response)
